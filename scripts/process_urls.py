@@ -5,10 +5,10 @@ import sys
 import time
 from pathlib import Path
 
-from metrics.net_score import NetScore
-from metrics_engine import compute_all_metrics, flatten_to_ndjson
-from url_handler import URLHandler
-from utils import reorder_top_level_like_json
+from model_audit_cli.metrics.net_score import NetScore
+from model_audit_cli.metrics_engine import compute_all_metrics, flatten_to_ndjson
+from model_audit_cli.url_handler import URLHandler
+from model_audit_cli.utils import reorder_top_level_like_json
 
 
 def main():
