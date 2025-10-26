@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "model-registry"
+version = "0.1.0"
+
+dependencies = [
+    "requests>=2.32",
+    "pydantic>=2, <3",
+    "types-requests>=2.32",
+    "huggingface-hub>=0.35",
+    "python-dotenv>=1.1.1"
+]
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "flake8",
+    "flake8-docstrings",
+    "isort",
+    "mypy",
+    "pytest",
+    "pytest-cov",
+    "pre-commit",
+    "ruff",
+]
+
+[tool.black]
+line-length = 88
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+strict = true
+files = ["src", "test"]
+mypy_path = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+markers = [
+    "unit: fast, isolated tests",
+    "integration: hits external systems (db, services, network)",
+    "e2e: full end-to-end flows",
+    "perf: performance/benchmark tests"
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

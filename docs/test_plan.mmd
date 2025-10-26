@@ -1,0 +1,13 @@
+flowchart TD
+  A[Pull Request] --> B[Static Checks isort • flake8 • mypy]
+  B --> C[Unit Tests pytest + coverage]
+  C --> D[CLI Contract Check & 
+  I/O Behaviors 
+  ./run URL_FILE → NDJSON schema validate]
+  D --> E[Security/Audit bandit • pip-audit]
+  E --> F{Gates Met?}
+  F -- no --> G[Fail PR Comment with diagnostics]
+  F -- yes --> H[Merge allowed]
+  H --> I[Scheduled Nightly/Weekly
+  Perf & Parallelism Suites latency budgets • determinism]
+  I --> J[Trend Report alerts on regression]

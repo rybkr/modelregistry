@@ -1,0 +1,21 @@
+#/usr/bin/env bash
+
+set -e
+SCRIPTS_DIR="$(dirname "$0")/scripts"
+
+if [ $# -lt 1 ]; then
+    echo "Usage: ./run [install|test|<url_file>]" >&2
+    exit 2
+fi
+
+case "$1" in
+    install)
+        "$SCRIPTS_DIR/install.sh"
+        ;;
+    test)
+        "$SCRIPTS_DIR/test.sh"
+        ;;
+    *)
+        "$SCRIPTS_DIR/process_urls.py" "$1"
+        ;;
+esac
