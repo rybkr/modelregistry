@@ -1,4 +1,4 @@
-#/usr/bin/env bash
+#!/usr/bin/env bash
 
 set -e
 SCRIPTS_DIR="$(dirname "$0")/scripts"
