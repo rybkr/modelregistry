@@ -78,9 +78,11 @@ def list_packages():
         offset = int(request.args.get('offset', 0))
         limit = int(request.args.get('limit', 100))
         query = request.args.get('query', '')
+        regex = request.args.get('regex', 'false').lower() == 'true'
         
         if query:
-            packages = storage.search_packages(query)
+            packages = storage.search_packages(query, use_regex=regex)
+            packages = packages[offset:offset + limit]
         else:
             packages = storage.list_packages(offset=offset, limit=limit)
         

@@ -1,14 +1,11 @@
-"""
-Simple storage layer for the Model Registry.
-Initially in-memory, to be upgraded to AWS services.
-"""
-
 from typing import Dict, List, Optional
 from datetime import datetime
 from registry_models import Package
+import re
 
 
 class RegistryStorage:
+    
     def __init__(self):
         self.packages: Dict[str, Package] = {}
         self.reset()
@@ -33,14 +30,29 @@ class RegistryStorage:
             return True
         return False
     
-    def search_packages(self, query: str) -> List[Package]:
+    def search_packages(self, query: str, use_regex: bool = False) -> List[Package]:
         results = []
-        query_lower = query.lower()
-        for package in self.packages.values():
-            if query_lower in package.name.lower():
-                results.append(package)
+        
+        if use_regex:
+            try:
+                pattern = re.compile(query, re.IGNORECASE)
+            except re.error:
+                return []
+            
+            for package in self.packages.values():
+                if pattern.search(package.name):
+                    results.append(package)
+                elif 'readme' in package.metadata and pattern.search(str(package.metadata.get('readme', ''))):
+                    results.append(package)
+        else:
+            query_lower = query.lower()
+            for package in self.packages.values():
+                if query_lower in package.name.lower():
+                    results.append(package)
+                elif 'readme' in package.metadata and query_lower in str(package.metadata.get('readme', '')).lower():
+                    results.append(package)
+        
         return results
 
 
-# Global storage instance
 storage = RegistryStorage()
