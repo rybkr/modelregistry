@@ -1,7 +1,3 @@
-"""
-Flask REST API server for Model Registry Phase 2.
-"""
-
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from datetime import datetime
@@ -13,6 +9,9 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from registry_models import Package
 from storage import storage
+from model_audit_cli.metrics_engine import compute_all_metrics
+from model_audit_cli.models import Model
+from model_audit_cli.resources.model_resource import ModelResource
 
 app = Flask(__name__)
 CORS(app)
@@ -20,9 +19,9 @@ CORS(app)
 DEFAULT_USERNAME = "ece30861defaultadminuser"
 DEFAULT_PASSWORD = "'correcthorsebatterystaple123(!__+@**(A;DROP TABLE packages'"
 
+
 @app.route('/health', methods=['GET'])
 def health():
-    """System health endpoint for monitoring."""
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.utcnow().isoformat(),
@@ -42,7 +41,6 @@ def root():
 def upload_package():
     try:
         data = request.get_json()
-        
         if not data:
             return jsonify({'error': 'No data provided'}), 400
         
@@ -56,11 +54,11 @@ def upload_package():
             id=package_id,
             name=data['name'],
             version=data['version'],
-            uploaded_by=DEFAULT_USERNAME,  # TODO: Get from auth token
+            uploaded_by=DEFAULT_USERNAME,
             upload_timestamp=datetime.utcnow(),
             size_bytes=len(data.get('content', '')),
             metadata=data.get('metadata', {}),
-            s3_key=None  # TODO: Upload to S3
+            s3_key=None
         )
         
         storage.create_package(package)
@@ -97,12 +95,9 @@ def list_packages():
 def get_package(package_id):
     try:
         package = storage.get_package(package_id)
-        
         if not package:
             return jsonify({'error': 'Package not found'}), 404
-        
         return jsonify(package.to_dict()), 200
-        
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -111,12 +106,28 @@ def get_package(package_id):
 def delete_package(package_id):
     try:
         success = storage.delete_package(package_id)
-        
         if not success:
             return jsonify({'error': 'Package not found'}), 404
-        
         return jsonify({'message': 'Package deleted successfully'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/packages/<package_id>/rate', methods=['GET'])
+def rate_package(package_id):
+    try:
+        package = storage.get_package(package_id)
+        if not package:
+            return jsonify({'error': 'Package not found'}), 404
         
+        url = package.metadata.get('url')
+        if not url:
+            return jsonify({'error': 'No URL in package metadata'}), 400
+        
+        model = Model(model=ModelResource(url=url))
+        results = compute_all_metrics(model)
+        
+        return jsonify(results), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
