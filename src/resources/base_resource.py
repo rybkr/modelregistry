@@ -3,8 +3,8 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel
 
-from model_audit_cli.adapters.repo_view import RepoView
-from model_audit_cli.errors import UNSUPPORTED_URL, AppError
+from adapters.repo_view import RepoView
+from errors import UNSUPPORTED_URL, AppError
 
 
 class _BaseResource(BaseModel):

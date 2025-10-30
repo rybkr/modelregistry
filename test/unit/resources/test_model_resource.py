@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from model_audit_cli.adapters.repo_view import RepoView
-from model_audit_cli.resources.model_resource import ModelResource
+from adapters.repo_view import RepoView
+from resources.model_resource import ModelResource
 
 
 class TestModelResource:
     """Test cases for the ModelResource class."""
 
-    @patch("model_audit_cli.resources.model_resource.HFClient.get_model_metadata")
+    @patch("resources.model_resource.HFClient.get_model_metadata")
     def test_metadata_calls_hfclient(self, mock_get: MagicMock) -> None:
         """Test fetch_metadata calls HFClient.get_model_metadata with right params."""
         mock_get.return_value = {"name": "bert-base-uncased"}
@@ -20,7 +20,7 @@ class TestModelResource:
         assert meta["name"] == "bert-base-uncased"
         mock_get.assert_called_once_with("google-bert/bert-base-uncased")
 
-    @patch("model_audit_cli.resources.model_resource.HFModelFetcher")
+    @patch("resources.model_resource.HFModelFetcher")
     def test_open_files_returns_context_manager(self, mock_fetcher: MagicMock) -> None:
         """Test that open_files returns a context manager for RepoView."""
         mock_context_manager = MagicMock()
@@ -34,7 +34,7 @@ class TestModelResource:
             "google-bert/bert-base-uncased", allow_patterns=None
         )
 
-    @patch("model_audit_cli.resources.model_resource.HFClient.get_model_metadata")
+    @patch("resources.model_resource.HFClient.get_model_metadata")
     def test_fetch_metadata_cached(self, mock_get: MagicMock) -> None:
         """Test cached metadata is returned on subsequent calls without re-fetching."""
         mock_get.return_value = {"once": True}
@@ -46,7 +46,7 @@ class TestModelResource:
         assert a == b == {"once": True}
         mock_get.assert_called_once_with("google-bert/bert-base-uncased")
 
-    @patch("model_audit_cli.resources.model_resource.HFModelFetcher")
+    @patch("resources.model_resource.HFModelFetcher")
     def test_open_files_with_context_manager_usage(
         self, mock_fetcher: MagicMock
     ) -> None:

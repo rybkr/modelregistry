@@ -1,8 +1,8 @@
 import time
 from typing import Dict
 
-from model_audit_cli.log import logger
-from model_audit_cli.models import Model
+from log import logger
+from models import Model
 
 from .base_metric import Metric
 

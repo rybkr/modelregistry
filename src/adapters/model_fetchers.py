@@ -11,7 +11,7 @@ os.environ.pop("HF_HUB_ENABLE_HF_TRANSFER", None)
 
 from huggingface_hub import snapshot_download
 
-from model_audit_cli.adapters.repo_view import RepoView
+from adapters.repo_view import RepoView
 
 MODEL_ALLOW = [
     "README.md",

@@ -10,10 +10,10 @@ from urllib.parse import quote_plus, urlparse
 
 import requests
 
-from model_audit_cli.adapters.client import GitHubClient, GitLabClient
-from model_audit_cli.adapters.model_fetchers import _BaseSnapshotFetcher
-from model_audit_cli.adapters.repo_view import RepoView
-from model_audit_cli.errors import (
+from adapters.client import GitHubClient, GitLabClient
+from adapters.model_fetchers import _BaseSnapshotFetcher
+from adapters.repo_view import RepoView
+from errors import (
     HTTP_ERROR,
     NETWORK_ERROR,
     UNSUPPORTED_URL,

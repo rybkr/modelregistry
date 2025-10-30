@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from model_audit_cli.adapters.code_fetchers import open_codebase
-from model_audit_cli.errors import NETWORK_ERROR, UNSUPPORTED_URL, AppError
+from adapters.code_fetchers import open_codebase
+from errors import NETWORK_ERROR, UNSUPPORTED_URL, AppError
 
 
 def test_open_codebase_unsupported_host() -> None:
@@ -23,7 +23,7 @@ def test_open_codebase_unsupported_host() -> None:
 class TestHFSpaceFetcher:
     """Test cases for the HFSpaceFetcher."""
 
-    @patch("model_audit_cli.adapters.model_fetchers.snapshot_download")
+    @patch("adapters.model_fetchers.snapshot_download")
     def test_hf_space_fetcher_uses_snapshot_download(
         self, snapshot_download_mock: MagicMock, tmp_path: Path
     ) -> None:
@@ -48,7 +48,7 @@ class TestHFSpaceFetcher:
 class TestGitHubCodeFetcher:
     """Test cases for the GitHubCodeFetcher."""
 
-    @patch("model_audit_cli.adapters.code_fetchers.requests.get")
+    @patch("adapters.code_fetchers.requests.get")
     def test_github_tarball_happy_path(self, mock_get: MagicMock) -> None:
         """Test fetcher correctly fetches a tarball and reads its contents."""
         tgz = build_tgz({"README.md": b"# hello from GH\n"})
@@ -64,7 +64,7 @@ class TestGitHubCodeFetcher:
         # Your code uses the GitHub API tarball URL
         assert "/repos/someorg/somerepo/tarball/main" in called_url
 
-    @patch("model_audit_cli.adapters.code_fetchers.requests.get")
+    @patch("adapters.code_fetchers.requests.get")
     def test_github_tree_revision_is_used(self, mock_get: MagicMock) -> None:
         """Test fetcher uses the correct revision when specified in the URL."""
         tgz = build_tgz({"README.md": b"# on CSP-3 branch\n"})
@@ -79,10 +79,10 @@ class TestGitHubCodeFetcher:
         called_url = mock_get.call_args[0][0]
         assert "CSP-3-Email-verification" in called_url
 
-    @patch("model_audit_cli.adapters.code_fetchers.requests.get")
+    @patch("adapters.code_fetchers.requests.get")
     def test_github_http_error_maps_to_app_error(self, mock_get: MagicMock) -> None:
         """Test HTTP errors from the GitHub API are correctly mapped to AppError."""
-        from model_audit_cli.errors import HTTP_ERROR, AppError
+        from errors import HTTP_ERROR, AppError
 
         mock_get.return_value = make_response(status=404, text="Not Found")
 
@@ -91,7 +91,7 @@ class TestGitHubCodeFetcher:
                 pass
         assert ei.value.code == HTTP_ERROR
 
-    @patch("model_audit_cli.adapters.code_fetchers.requests.get")
+    @patch("adapters.code_fetchers.requests.get")
     def test_github_no_ref_defaults(self, mock_get: MagicMock) -> None:
         """Test fetcher gets default branch name when no branch indicated."""
         # 1) Default-branch lookup JSON
@@ -137,7 +137,7 @@ class TestGitHubCodeFetcher:
 class TestGitLabCodeFetcher:
     """Test cases for the GitLabCodeFetcher."""
 
-    @patch("model_audit_cli.adapters.code_fetchers.requests.get")
+    @patch("adapters.code_fetchers.requests.get")
     def test_gitlab_api_archive_with_ref(self, mock_get: MagicMock) -> None:
         """Test GitLab code fetcher correctly fetches an archive with a specific ref."""
         tgz = build_tgz({"README.md": b"# GL readme\n"})
@@ -155,10 +155,10 @@ class TestGitLabCodeFetcher:
         assert "repository/archive.tar.gz" in called_url
         assert "sha=main" in called_url
 
-    @patch("model_audit_cli.adapters.code_fetchers.requests.get")
+    @patch("adapters.code_fetchers.requests.get")
     def test_gitlab_http_error_maps_to_app_error(self, mock_get: MagicMock) -> None:
         """Test HTTP errors from the GitLab API are correctly mapped to AppError."""
-        from model_audit_cli.errors import HTTP_ERROR, AppError
+        from errors import HTTP_ERROR, AppError
 
         mock_get.return_value = make_response(status=403, text="Forbidden")
 
@@ -167,7 +167,7 @@ class TestGitLabCodeFetcher:
                 pass
         assert ei.value.code == HTTP_ERROR
 
-    @patch("model_audit_cli.adapters.code_fetchers.requests.get")
+    @patch("adapters.code_fetchers.requests.get")
     def test_gitlab_no_ref_uses_default_branch(self, mock_get: MagicMock) -> None:
         """Test fetcher gets default branch name when no branch indicated."""
         # 1) default branch lookup
@@ -221,7 +221,7 @@ class TestGitLabCodeFetcher:
         assert "sha=main" in third_url
 
 
-@patch("model_audit_cli.adapters.code_fetchers.requests.get")
+@patch("adapters.code_fetchers.requests.get")
 def test_tarball_network_error_maps_to_app_error(mock_get: MagicMock) -> None:
     """Test when _extract_tarball gives a network failure."""
     # Simulate a network failure inside _extract_tarball

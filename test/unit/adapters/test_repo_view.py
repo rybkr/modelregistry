@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from model_audit_cli.adapters.repo_view import RepoView
+from adapters.repo_view import RepoView
 
 
 def test_repo_view_basic(tmp_path: Path) -> None:

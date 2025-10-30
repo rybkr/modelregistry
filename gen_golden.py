@@ -1,4 +1,4 @@
-from model_audit_cli.models import Metrics, SizeScore
+from models import Metrics, SizeScore
 
 # where to write the golden file
 # REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]

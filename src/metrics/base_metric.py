@@ -1,6 +1,6 @@
 from typing import Any, Dict, Union
 
-from ..models import Model
+from models import Model
 
 
 class Metric:

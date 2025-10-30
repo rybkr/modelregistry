@@ -3,10 +3,10 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict
 
-from model_audit_cli.models import Model
+from models import Model
 
-from .metrics.base_metric import Metric
-from .metrics.registry import ALL_METRICS
+from metrics.base_metric import Metric
+from metrics.registry import ALL_METRICS
 
 FORCE_SEQUENTIAL = os.environ.get("FORCE_SEQUENTIAL") == "1"
 

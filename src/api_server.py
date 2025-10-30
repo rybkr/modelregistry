@@ -9,9 +9,9 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from registry_models import Package
 from storage import storage
-from model_audit_cli.metrics_engine import compute_all_metrics
-from model_audit_cli.models import Model
-from model_audit_cli.resources.model_resource import ModelResource
+from metrics_engine import compute_all_metrics
+from models import Model
+from resources.model_resource import ModelResource
 
 app = Flask(__name__)
 CORS(app)

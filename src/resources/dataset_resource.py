@@ -1,9 +1,9 @@
 from typing import Any, ContextManager, Iterable, Optional
 
-from model_audit_cli.adapters.client import HFClient
-from model_audit_cli.adapters.dataset_fetchers import HFDatasetFetcher
-from model_audit_cli.adapters.repo_view import RepoView
-from model_audit_cli.resources.base_resource import _BaseResource
+from adapters.client import HFClient
+from adapters.dataset_fetchers import HFDatasetFetcher
+from adapters.repo_view import RepoView
+from resources.base_resource import _BaseResource
 
 
 class DatasetResource(_BaseResource):

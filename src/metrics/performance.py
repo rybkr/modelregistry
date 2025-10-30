@@ -8,10 +8,10 @@ from typing import Any, Dict, Optional, cast
 import requests
 from dotenv import load_dotenv
 
-from model_audit_cli.log import logger
-from model_audit_cli.metrics.base_metric import Metric
-from model_audit_cli.models import Model
-from model_audit_cli.resources.base_resource import _BaseResource
+from log import logger
+from metrics.base_metric import Metric
+from models import Model
+from resources.base_resource import _BaseResource
 
 
 def try_readme(resource: _BaseResource, filename: str = "README.md") -> Optional[str]:

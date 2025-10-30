@@ -3,9 +3,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from model_audit_cli.metrics_engine import compute_all_metrics, flatten_to_ndjson
-from model_audit_cli.models import Model
-from model_audit_cli.resources.model_resource import ModelResource
+from metrics_engine import compute_all_metrics, flatten_to_ndjson
+from models import Model
+from resources.model_resource import ModelResource
 
 
 def main(path: str) -> None:

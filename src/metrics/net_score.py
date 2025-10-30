@@ -4,8 +4,8 @@ import statistics
 import time
 from typing import Dict, Optional
 
-from model_audit_cli.log import logger
-from model_audit_cli.metrics.base_metric import Metric
+from log import logger
+from metrics.base_metric import Metric
 
 # Metric weights based on Sarah's priorities
 METRIC_WEIGHTS: Dict[str, float] = {

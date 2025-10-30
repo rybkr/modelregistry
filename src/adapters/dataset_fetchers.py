@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Iterable, Optional
 
-from model_audit_cli.adapters.model_fetchers import _BaseSnapshotFetcher
+from adapters.model_fetchers import _BaseSnapshotFetcher
 
 DATASET_ALLOW = [
     "README.md",
