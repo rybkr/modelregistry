@@ -3,16 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional
 
-# Canonical error codes (keep short & stable)
-NETWORK_ERROR = "NETWORK_ERROR"  # DNS, connect, TLS, timeout
-RATE_LIMIT = "RATE_LIMIT"  # 429
-AUTH_ERROR = "AUTH_ERROR"  # 401/403
-NOT_FOUND = "NOT_FOUND"  # 404
-SERVER_ERROR = "SERVER_ERROR"  # 5xx
-HTTP_ERROR = "HTTP_ERROR"  # other 4xx
-SCHEMA_ERROR = "SCHEMA_ERROR"  # JSON/schema parsing/validation
-UNSUPPORTED_URL = "UNSUPPORTED_URL"  # host/type we don't handle
-INTERNAL_ERROR = "INTERNAL_ERROR"  # unexpected bug
+NETWORK_ERROR = "NETWORK_ERROR"
+RATE_LIMIT = "RATE_LIMIT"
+AUTH_ERROR = "AUTH_ERROR"
+NOT_FOUND = "NOT_FOUND"
+SERVER_ERROR = "SERVER_ERROR"
+HTTP_ERROR = "HTTP_ERROR"
+SCHEMA_ERROR = "SCHEMA_ERROR"
+UNSUPPORTED_URL = "UNSUPPORTED_URL"
+INTERNAL_ERROR = "INTERNAL_ERROR"
 
 
 @dataclass
@@ -20,12 +19,10 @@ class AppError(Exception):
     """A custom exception class for application-specific errors.
 
     Attributes:
-        code (str): A short, stable error code representing the type of error.
-        message (str): A human-readable error message.
-        cause (Optional[BaseException]): The underlying exception that caused
-            this error, if any.
-        context (Optional[dict[str, Any]]): Additional context about the error,
-            such as request details.
+        code:    A short, stable error code representing the type of error.
+        message: A human-readable error message.
+        cause:   The underlying exception that caused this error, if any.
+        context: Additional context about the error, such as request details.
     """
 
     code: str
@@ -34,20 +31,14 @@ class AppError(Exception):
     context: Optional[dict[str, Any]] = None
 
     def __str__(self) -> str:
-        """Return a string representation of the error.
-
-        Returns:
-            str: A string representation of the error.
-        """
         base = f"{self.code}: {self.message}"
         if self.context:
-            # keep it short; avoid leaking secrets
-            safe = {
+            safe_ctx = {
                 k: v
                 for k, v in self.context.items()
                 if k.lower() not in {"authorization", "api_key"}
             }
-            base += f" | ctx={safe}"
+            base += f" | ctx={safe_ctx}"
         return base
 
 
@@ -61,24 +52,15 @@ def http_error_from_hf_response(
     """Create an AppError instance from an HTTP response from the Hugging Face API.
 
     Args:
-        url (str): The URL of the API request.
-        status (int): The HTTP status code of the response.
-        body (Optional[str]): The body of the response, if available.
-        headers (Optional[dict[str, Any]]): The headers of the response,
-            if available.
-
-    Returns:
-        AppError: An instance of AppError representing the HTTP error.
-
-    Raises:
-        AppError: If the HTTP status code indicates an error.
+        url:     The URL of the API request.
+        status:  The HTTP status code of the response.
+        body:    The body of the response, if available.
+        headers: The headers of the response, if available.
     """
-    # Trim noisy bodies
     snippet = (body or "").strip().replace("\n", " ")
     if len(snippet) > 300:
         snippet = snippet[:300] + "…"
 
-    # Try to extract a correlation/request id if HF sent one
     req_id = None
     if headers:
         for k in ("x-request-id", "x-amzn-requestid"):
