@@ -1,4 +1,3 @@
-# src/metrics/bus_factor.py
 import math
 import time
 from datetime import datetime, timezone

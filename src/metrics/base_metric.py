@@ -4,8 +4,6 @@ from models import Model
 
 
 class Metric:
-    """Base class for all metrics."""
-
     name: str
     value: Union[float, Dict[str, float]]
     latency_ms: int

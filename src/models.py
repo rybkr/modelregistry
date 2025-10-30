@@ -11,9 +11,9 @@ class Model(BaseModel):
     """Represents a machine learning model with associated dataset and code resources.
 
     Attributes:
-        model (ModelResource): The model resource containing model-specific information.
-        dataset (Optional[DatasetResource]): The dataset resource associated with model.
-        code (Optional[CodeResource]): The code resource associated with the model.
+        model:   The model resource containing model-specific information.
+        dataset: The dataset resource associated with model.
+        code:    The code resource associated with the model.
     """
 
     model: ModelResource
@@ -22,8 +22,6 @@ class Model(BaseModel):
 
 
 class SizeScore(BaseModel):
-    """Calculates the score for size metric."""
-
     raspberry_pi: float = Field(1.0, ge=0, le=1)
     jetson_nano: float = Field(1.0, ge=0, le=1)
     desktop_pc: float = Field(1.0, ge=0, le=1)
@@ -31,12 +29,10 @@ class SizeScore(BaseModel):
 
 
 class Metrics(BaseModel):
-    """Base model for the metrics calculations."""
-
     name: str
     category: Annotated[
         str, StringConstraints(pattern="^(MODEL|DATASET|CODE)$")
-    ]  # enum-like restriction
+    ]
 
     net_score: float = Field(1.0, ge=0, le=1)
     net_score_latency: int = 200
