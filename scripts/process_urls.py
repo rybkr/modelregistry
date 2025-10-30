@@ -42,7 +42,7 @@ def main():
         ndjson = flatten_to_ndjson(results)
         ndjson["name"] = model.model._repo_id.split("/")[1]
         ndjson["category"] = "MODEL"
-        ndjson = reorder_top_level_like_json(ndjson, "test/golden/metrics.ndjson")
+        ndjson = reorder_top_level_like_json(ndjson, "test/fixtures/golden/metrics.ndjson")
 
         print(json.dumps(ndjson))
 
