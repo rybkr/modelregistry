@@ -1,4 +1,4 @@
-.PHONY: test clean
+.PHONY: test clean install
 
 test:
 	@python3 -m pytest --cov=src --cov-report=html:test/_htmlcov
@@ -6,3 +6,6 @@ test:
 
 clean:
 	@find . -type d -name "__pycache__" -exec rm -r {} +
+
+install:
+	@pip install -e ".[dev]"
