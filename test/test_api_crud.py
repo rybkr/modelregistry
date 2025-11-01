@@ -1,6 +1,8 @@
 import pytest
 import sys
 import os
+from typing import Generator
+from flask.testing import FlaskClient
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
@@ -9,7 +11,7 @@ from storage import storage
 
 
 @pytest.fixture
-def client():
+def client() -> Generator[FlaskClient, None, None]:
     app.config['TESTING'] = True
     with app.test_client() as client:
         storage.reset()  # Reset before each test
@@ -17,21 +19,21 @@ def client():
         storage.reset()  # Reset after each test
 
 
-def test_health_endpoint(client):
+def test_health_endpoint(client: FlaskClient) -> None:
     response = client.get('/health')
     assert response.status_code == 200
     data = response.get_json()
     assert data['status'] == 'healthy'
 
 
-def test_root_endpoint(client):
+def test_root_endpoint(client: FlaskClient) -> None:
     response = client.get('/')
     assert response.status_code == 200
     data = response.get_json()
     assert 'Model Registry API' in data['message']
 
 
-def test_upload_package(client):
+def test_upload_package(client: FlaskClient) -> None:
     package_data = {
         'name': 'test-model',
         'version': '1.0.0',
@@ -48,7 +50,7 @@ def test_upload_package(client):
     assert data['package']['version'] == '1.0.0'
 
 
-def test_list_packages(client):
+def test_list_packages(client: FlaskClient) -> None:
     package_data = {
         'name': 'test-model',
         'version': '1.0.0'
@@ -63,7 +65,7 @@ def test_list_packages(client):
     assert len(data['packages']) == 1
 
 
-def test_get_package(client):
+def test_get_package(client: FlaskClient) -> None:
     package_data = {
         'name': 'test-model',
         'version': '1.0.0'
@@ -79,7 +81,7 @@ def test_get_package(client):
     assert data['name'] == 'test-model'
 
 
-def test_delete_package(client):
+def test_delete_package(client: FlaskClient) -> None:
     package_data = {
         'name': 'test-model',
         'version': '1.0.0'
@@ -94,7 +96,7 @@ def test_delete_package(client):
     assert get_response.status_code == 404
 
 
-def test_reset_registry(client):
+def test_reset_registry(client : FlaskClient) -> None:
     package_data = {
         'name': 'test-model',
         'version': '1.0.0'

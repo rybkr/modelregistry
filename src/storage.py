@@ -6,11 +6,11 @@ import re
 
 class RegistryStorage:
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.packages: Dict[str, Package] = {}
         self.reset()
     
-    def reset(self):
+    def reset(self) -> None:
         self.packages.clear()
     
     def create_package(self, package: Package) -> Package:
