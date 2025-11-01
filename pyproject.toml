@@ -28,6 +28,7 @@ dev = [
     "pytest-cov",
     "pre-commit",
     "ruff",
+    "types-Flask-Cors"
 ]
 
 [tool.black]

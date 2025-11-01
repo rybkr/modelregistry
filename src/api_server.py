@@ -1,4 +1,5 @@
 from flask import Flask, jsonify, request
+from flask.typing import ResponseReturnValue
 from flask_cors import CORS
 from datetime import datetime
 import uuid
@@ -21,7 +22,7 @@ DEFAULT_PASSWORD = "'correcthorsebatterystaple123(!__+@**(A;DROP TABLE packages'
 
 
 @app.route('/health', methods=['GET'])
-def health():
+def health() -> ResponseReturnValue:
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.utcnow().isoformat(),
@@ -30,7 +31,7 @@ def health():
 
 
 @app.route('/', methods=['GET'])
-def root():
+def root() -> ResponseReturnValue:
     return jsonify({
         'message': 'Model Registry API v1.0',
         'status': 'running'
@@ -38,7 +39,7 @@ def root():
 
 
 @app.route('/packages', methods=['POST'])
-def upload_package():
+def upload_package() -> ResponseReturnValue:
     try:
         data = request.get_json()
         if not data:
@@ -73,7 +74,7 @@ def upload_package():
 
 
 @app.route('/packages', methods=['GET'])
-def list_packages():
+def list_packages() -> ResponseReturnValue:
     try:
         offset = int(request.args.get('offset', 0))
         limit = int(request.args.get('limit', 100))
@@ -98,7 +99,7 @@ def list_packages():
 
 
 @app.route('/packages/<package_id>', methods=['GET'])
-def get_package(package_id):
+def get_package(package_id: str) -> ResponseReturnValue:
     try:
         package = storage.get_package(package_id)
         if not package:
@@ -109,7 +110,7 @@ def get_package(package_id):
 
 
 @app.route('/packages/<package_id>', methods=['DELETE'])
-def delete_package(package_id):
+def delete_package(package_id: str) -> ResponseReturnValue:
     try:
         success = storage.delete_package(package_id)
         if not success:
@@ -120,7 +121,7 @@ def delete_package(package_id):
 
 
 @app.route('/packages/<package_id>/rate', methods=['GET'])
-def rate_package(package_id):
+def rate_package(package_id: str) -> ResponseReturnValue:
     try:
         package = storage.get_package(package_id)
         if not package:
@@ -146,7 +147,7 @@ def rate_package(package_id):
 
 
 @app.route('/ingest', methods=['POST'])
-def ingest_model():
+def ingest_model() -> ResponseReturnValue:
     try:
         data = request.get_json()
         if not data or 'url' not in data:
@@ -210,7 +211,7 @@ def ingest_model():
 
 
 @app.route('/reset', methods=['DELETE'])
-def reset_registry():
+def reset_registry() -> ResponseReturnValue:
     try:
         storage.reset()
         return jsonify({'message': 'Registry reset successfully'}), 200
