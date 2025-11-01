@@ -37,7 +37,7 @@ def root():
     }), 200
 
 
-@app.route('/packages', methods=['POST'])
+@app.route('/upload', methods=['POST'])
 def upload_package():
     try:
         data = request.get_json()
