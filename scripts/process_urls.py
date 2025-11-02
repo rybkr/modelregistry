@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 
+import os
 import json
 import sys
 import time
 from pathlib import Path
 
-from model_audit_cli.metrics.net_score import NetScore
-from model_audit_cli.metrics_engine import compute_all_metrics, flatten_to_ndjson
-from model_audit_cli.url_handler import URLHandler
-from model_audit_cli.utils import reorder_top_level_like_json
+# Add parent directory (project root) to path to import from src
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
+from metrics.net_score import NetScore
+from metrics_engine import compute_all_metrics, flatten_to_ndjson
+from url_handler import URLHandler
+from utils import reorder_top_level_like_json
 
 
 def main():
@@ -42,7 +46,9 @@ def main():
         ndjson = flatten_to_ndjson(results)
         ndjson["name"] = model.model._repo_id.split("/")[1]
         ndjson["category"] = "MODEL"
-        ndjson = reorder_top_level_like_json(ndjson, "test/fixtures/golden/metrics.ndjson")
+        ndjson = reorder_top_level_like_json(
+            ndjson, "test/fixtures/golden/metrics.ndjson"
+        )
 
         print(json.dumps(ndjson))
 

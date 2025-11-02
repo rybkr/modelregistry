@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from model_audit_cli.metrics.ramp_up_time import MODEL_EXTENSIONS, RampUpTime
+from metrics.ramp_up_time import MODEL_EXTENSIONS, RampUpTime
 
 # --- helpers -----------------------------------------------------------------
 

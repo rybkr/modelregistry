@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, cast
 from unittest.mock import MagicMock
 
-from model_audit_cli.metrics.dataset_quality import DatasetQuality
+from metrics.dataset_quality import DatasetQuality
 
 
 class TestDatasetQuality:

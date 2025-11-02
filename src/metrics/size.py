@@ -1,8 +1,8 @@
 import time
 
-from model_audit_cli.log import logger
-from model_audit_cli.metrics.base_metric import Metric
-from model_audit_cli.models import Model
+from log import logger
+from metrics.base_metric import Metric
+from models import Model
 
 # Device memory budgets in bytes
 DEVICE_BUDGETS = {
@@ -101,10 +101,10 @@ class Size(Metric):
 
 if __name__ == "__main__":
     """Example usage of the Size metric."""
-    from model_audit_cli.models import Model
-    from model_audit_cli.resources.code_resource import CodeResource
-    from model_audit_cli.resources.dataset_resource import DatasetResource
-    from model_audit_cli.resources.model_resource import ModelResource
+    from models import Model
+    from resources.code_resource import CodeResource
+    from resources.dataset_resource import DatasetResource
+    from resources.model_resource import ModelResource
 
     # Create a model with resources
     model_res = ModelResource("https://huggingface.co/google-bert/bert-base-uncased")

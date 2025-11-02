@@ -4,10 +4,10 @@ from pathlib import Path
 from typing import Any, Literal, Optional, Type
 from unittest.mock import patch
 
-from model_audit_cli.metrics.code_quality import CodeQuality
-from model_audit_cli.models import Model
-from model_audit_cli.resources.code_resource import CodeResource
-from model_audit_cli.resources.model_resource import ModelResource
+from metrics.code_quality import CodeQuality
+from models import Model
+from resources.code_resource import CodeResource
+from resources.model_resource import ModelResource
 
 
 class DummyRepo:
@@ -67,9 +67,7 @@ class TestCodeQuality:
             return DummyRepo(tmp_path)
 
         # Patch open_codebase so we don’t actually fetch anything
-        monkeypatch.setattr(
-            "model_audit_cli.metrics.code_quality.open_codebase", fake_open_codebase
-        )
+        monkeypatch.setattr("metrics.code_quality.open_codebase", fake_open_codebase)
 
         # Patch linters to fixed values
         monkeypatch.setattr(CodeQuality, "_flake8_score", lambda self, repo: 0.8)
@@ -77,7 +75,7 @@ class TestCodeQuality:
 
         # Patch CodeResource metadata to simulate GitHub stars
         with patch(
-            "model_audit_cli.metrics.code_quality.CodeResource.fetch_metadata",
+            "metrics.code_quality.CodeResource.fetch_metadata",
             return_value={"stargazers_count": 24},
         ):
             metric = CodeQuality()

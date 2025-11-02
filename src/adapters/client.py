@@ -4,7 +4,7 @@ from urllib.parse import quote_plus, urlparse
 
 import requests
 
-from model_audit_cli.errors import SCHEMA_ERROR, AppError, http_error_from_hf_response
+from errors import SCHEMA_ERROR, AppError, http_error_from_hf_response
 
 
 class _Client:

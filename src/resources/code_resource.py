@@ -1,9 +1,9 @@
 from typing import Any, ContextManager, Iterable, Optional
 
-from model_audit_cli.adapters.client import GitHubClient, GitLabClient, HFClient
-from model_audit_cli.adapters.code_fetchers import open_codebase
-from model_audit_cli.adapters.repo_view import RepoView
-from model_audit_cli.resources.base_resource import _BaseResource
+from adapters.client import GitHubClient, GitLabClient, HFClient
+from adapters.code_fetchers import open_codebase
+from adapters.repo_view import RepoView
+from resources.base_resource import _BaseResource
 
 
 class CodeResource(_BaseResource):

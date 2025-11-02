@@ -3,7 +3,7 @@ import pathlib
 
 import pytest
 
-from model_audit_cli.models import Metrics
+from models import Metrics
 
 GOLDEN_FILE = pathlib.Path(__file__).parent / "fixtures" / "golden" / "metrics.ndjson"
 

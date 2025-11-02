@@ -1,16 +1,57 @@
-.PHONY: test clean install serve test-api health upload list reset ingest search search-regex
+.PHONY: test clean install serve test-api health upload list reset ingest lint format type-check security-check ci
 
+# Setup and installation
+install:
+	@pip install -e ".[dev]"
+	@pre-commit install
+
+# Code quality
+lint:
+	@echo "Running linters..."
+	@flake8 src test --count --select=E9,F63,F7,F82 --show-source --statistics
+	@flake8 src test --count --exit-zero --max-complexity=10 --max-line-length=88 --statistics
+
+format:
+	@echo "Formatting code..."
+	@black src test
+	@isort src test
+
+type-check:
+	@echo "Type checking..."
+	@mypy src --ignore-missing-imports
+
+security-check:
+	@echo "Running security checks..."
+	@bandit -r src -ll || true
+	@safety check || true
+
+# Testing
 test:
-	@python3 -m pytest --cov=src --cov-report=html:test/_htmlcov
-	@echo "Open test/_htmlcov/index.py in a browser for full coverage report."
+	@python3 -m pytest --cov=src --cov-report=html:test/_htmlcov --junitxml=test/_junit.xml -v
+	@echo "Open test/_htmlcov/index.html in a browser for full coverage report."
 
+test-fast:
+	@python3 -m pytest --cov=src --cov-report=term-missing -v -m "not integration and not e2e"
+
+test-integration:
+	@python3 -m pytest test/integration -v -m integration
+
+test-e2e:
+	@python3 -m pytest test/e2e -v -m e2e
+
+# Full CI pipeline (matches GitHub Actions)
+ci: lint type-check test security-check
+	@echo "✅ All checks passed!"
+
+# Cleanup
 clean:
 	@find . -type d -name "__pycache__" -exec rm -r {} +
 	@rm -f .api_server.pid
+	@rm -rf test/_htmlcov
+	@rm -f test/_coverage.xml test/_junit.xml
+	@rm -rf dist build *.egg-info
 
-install:
-	@pip install -e ".[dev]"
-
+# API server commands
 serve:
 	@echo "Starting API server on http://localhost:8000"
 	@python src/api_server.py

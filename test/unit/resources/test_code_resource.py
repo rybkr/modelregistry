@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from model_audit_cli.adapters.repo_view import RepoView
-from model_audit_cli.resources.code_resource import CodeResource
+from adapters.repo_view import RepoView
+from resources.code_resource import CodeResource
 
 
 class TestCodeResource:
     """Test cases for the CodeResource class."""
 
-    @patch("model_audit_cli.resources.code_resource.HFClient.get_space_metadata")
+    @patch("resources.code_resource.HFClient.get_space_metadata")
     def test_fetch_metadata_hf_space(self, mock_space_meta: MagicMock) -> None:
         """Test successful retrieval of metadata for Hugging Face Spaces."""
         mock_space_meta.return_value = {"host": "hf_space", "name": "demo"}
@@ -21,7 +21,7 @@ class TestCodeResource:
         # ensures _hf_id_from_url() was used (owner/name)
         mock_space_meta.assert_called_once_with("acme/demo")
 
-    @patch("model_audit_cli.resources.code_resource.GitHubClient.get_metadata")
+    @patch("resources.code_resource.GitHubClient.get_metadata")
     def test_fetch_metadata_github(self, mock_meta: MagicMock) -> None:
         """Test successful retrieval of metadata for GitHub repositories."""
         mock_meta.return_value = {"host": "github", "default_branch": "main"}
@@ -32,7 +32,7 @@ class TestCodeResource:
         assert meta["host"] == "github"
         mock_meta.assert_called_once_with("https://github.com/org/repo")
 
-    @patch("model_audit_cli.resources.code_resource.GitLabClient.get_metadata")
+    @patch("resources.code_resource.GitLabClient.get_metadata")
     def test_fetch_metadata_gitlab(self, mock_meta: MagicMock) -> None:
         """Test successful retrieval of metadata for GitLab repositories."""
         mock_meta.return_value = {"host": "gitlab", "default_branch": "main"}
@@ -43,7 +43,7 @@ class TestCodeResource:
         assert meta["host"] == "gitlab"
         mock_meta.assert_called_once_with("https://gitlab.com/group/sub/repo")
 
-    @patch("model_audit_cli.resources.code_resource.GitHubClient.get_metadata")
+    @patch("resources.code_resource.GitHubClient.get_metadata")
     def test_fetch_metadata_cached_does_not_recall(self, mock_meta: MagicMock) -> None:
         """Test cached metadata is returned on subsequent calls without re-fetching."""
         mock_meta.return_value = {"host": "github"}
@@ -55,7 +55,7 @@ class TestCodeResource:
         assert a == b == {"host": "github"}
         mock_meta.assert_called_once_with("https://github.com/org/repo")
 
-    @patch("model_audit_cli.resources.code_resource.open_codebase")
+    @patch("resources.code_resource.open_codebase")
     def test_open_files_returns_context_manager(
         self, mock_open_codebase: MagicMock
     ) -> None:
@@ -71,7 +71,7 @@ class TestCodeResource:
             "https://github.com/org/repo", allow_patterns=None
         )
 
-    @patch("model_audit_cli.resources.code_resource.open_codebase")
+    @patch("resources.code_resource.open_codebase")
     def test_open_files_with_context_manager_usage(
         self, mock_open_codebase: MagicMock
     ) -> None:

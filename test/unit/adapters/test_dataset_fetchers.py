@@ -3,13 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from model_audit_cli.adapters.dataset_fetchers import HFDatasetFetcher
+from adapters.dataset_fetchers import HFDatasetFetcher
 
 
 class TestHFDatasetFetcher:
     """Test cases for HFDatasetFetcher."""
 
-    @patch("model_audit_cli.adapters.model_fetchers.snapshot_download")
+    @patch("adapters.model_fetchers.snapshot_download")
     def test_dataset_fetcher_minimal(
         self, snapshot_download_mock: MagicMock, tmp_path: Path
     ) -> None:

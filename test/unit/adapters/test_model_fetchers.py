@@ -3,13 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from model_audit_cli.adapters.model_fetchers import HFModelFetcher
+from adapters.model_fetchers import HFModelFetcher
 
 
 class TestHFModelFetcher:
     """Test cases for the HFModelFetcher."""
 
-    @patch("model_audit_cli.adapters.model_fetchers.snapshot_download")
+    @patch("adapters.model_fetchers.snapshot_download")
     def test_model_fetcher_minimal(
         self, snapshot_download_mock: MagicMock, tmp_path: Path
     ) -> None:
@@ -29,7 +29,7 @@ class TestHFModelFetcher:
         assert kwargs["repo_id"] == "org/name"
         assert "allow_patterns" in kwargs
 
-    @patch("model_audit_cli.adapters.model_fetchers.snapshot_download")
+    @patch("adapters.model_fetchers.snapshot_download")
     def test_base_snapshot_fetcher_removes_large_files(
         self, snapshot_download_mock: MagicMock, tmp_path: Path
     ) -> None:

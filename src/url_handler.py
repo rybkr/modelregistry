@@ -1,9 +1,9 @@
 from typing import Optional
 
-from model_audit_cli.models import Model
-from model_audit_cli.resources.code_resource import CodeResource
-from model_audit_cli.resources.dataset_resource import DatasetResource
-from model_audit_cli.resources.model_resource import ModelResource
+from models import Model
+from resources.code_resource import CodeResource
+from resources.dataset_resource import DatasetResource
+from resources.model_resource import ModelResource
 
 
 class URLHandler:

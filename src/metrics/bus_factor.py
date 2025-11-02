@@ -1,12 +1,11 @@
-# src/model_audit_cli/metrics/bus_factor.py
 import math
 import time
 from datetime import datetime, timezone
 from typing import Dict, Optional
 
-from model_audit_cli.log import logger
-from model_audit_cli.metrics.base_metric import Metric
-from model_audit_cli.models import Model
+from log import logger
+from metrics.base_metric import Metric
+from models import Model
 
 
 class BusFactor(Metric):

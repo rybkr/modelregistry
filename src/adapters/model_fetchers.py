@@ -6,12 +6,11 @@ from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Iterable, Optional
 
+from huggingface_hub import snapshot_download
+from adapters.repo_view import RepoView
+
 os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
 os.environ.pop("HF_HUB_ENABLE_HF_TRANSFER", None)
-
-from huggingface_hub import snapshot_download
-
-from model_audit_cli.adapters.repo_view import RepoView
 
 MODEL_ALLOW = [
     "README.md",

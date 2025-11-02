@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from model_audit_cli.adapters.repo_view import RepoView
-from model_audit_cli.resources.dataset_resource import DatasetResource
+from adapters.repo_view import RepoView
+from resources.dataset_resource import DatasetResource
 
 
 class TestDatasetResource:
     """Test cases for the DatasetResource class."""
 
-    @patch("model_audit_cli.resources.dataset_resource.HFClient.get_dataset_metadata")
+    @patch("resources.dataset_resource.HFClient.get_dataset_metadata")
     def test_metadata_calls_hfclient(self, mock_get: MagicMock) -> None:
         """Test fetch_metadata calls HFClient.get_dataset_metadata with right params."""
         mock_get.return_value = {"name": "bookcorpus"}
@@ -20,7 +20,7 @@ class TestDatasetResource:
         assert meta["name"] == "bookcorpus"
         mock_get.assert_called_once_with("bookcorpus/bookcorpus")
 
-    @patch("model_audit_cli.resources.dataset_resource.HFDatasetFetcher")
+    @patch("resources.dataset_resource.HFDatasetFetcher")
     def test_open_files_returns_context_manager(self, mock_fetcher: MagicMock) -> None:
         """Test that open_files returns a context manager for RepoView."""
         mock_context_manager = MagicMock()
@@ -34,7 +34,7 @@ class TestDatasetResource:
             "bookcorpus/bookcorpus", allow_patterns=None
         )
 
-    @patch("model_audit_cli.resources.dataset_resource.HFClient.get_dataset_metadata")
+    @patch("resources.dataset_resource.HFClient.get_dataset_metadata")
     def test_fetch_metadata_cached(self, mock_get: MagicMock) -> None:
         """Test cached metadata is returned on subsequent calls without re-fetching."""
         mock_get.return_value = {"once": True}
@@ -46,7 +46,7 @@ class TestDatasetResource:
         assert a == b == {"once": True}
         mock_get.assert_called_once_with("ns/ds")
 
-    @patch("model_audit_cli.resources.dataset_resource.HFDatasetFetcher")
+    @patch("resources.dataset_resource.HFDatasetFetcher")
     def test_open_files_with_context_manager_usage(
         self, mock_fetcher: MagicMock
     ) -> None:

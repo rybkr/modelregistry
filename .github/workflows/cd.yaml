@@ -40,13 +40,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
       
-      # TODO: Add actual deployment steps
-      # Options: 
-      # - Deploy to EC2
-      # - Deploy to Lambda
-      # - Deploy to ECS/Fargate
-      # - Deploy to Elastic Beanstalk
-      
+      # TODO(rybkr): Actual deployment steps
       - name: Placeholder - Deploy step
         run: |
           echo "Deployment step will be added once AWS infrastructure is set up"

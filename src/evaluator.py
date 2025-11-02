@@ -3,13 +3,19 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from model_audit_cli.metrics_engine import compute_all_metrics, flatten_to_ndjson
-from model_audit_cli.models import Model
-from model_audit_cli.resources.model_resource import ModelResource
+from metrics_engine import compute_all_metrics, flatten_to_ndjson
+from models import Model
+from resources.model_resource import ModelResource
 
 
 def main(path: str) -> None:
-    """Dummy CLI that runs metrics on each URL in a file and prints NDJSON output."""
+    """Evaluate models from a file of URLs and output results as NDJSON.
+
+    Reads a file containing model URLs (one per line), evaluates each model
+    using the metrics engine, and outputs the results as newline-delimited
+    JSON (NDJSON) to stdout. Each line of output represents one model's
+    evaluation results.
+    """
     urls = Path(path).read_text().splitlines()
     for url in urls:
         if not url.strip() or url.startswith("#"):
