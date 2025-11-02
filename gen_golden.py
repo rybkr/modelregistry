@@ -1,8 +1,13 @@
+from pathlib import Path
+import sys
+
+# Add src to path to import from there
+sys.path.insert(0, "src")
+
 from models import Metrics, SizeScore
 
 # where to write the golden file
-# REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-GOLDEN_FILE = "test/golden/metrics.ndjson"
+GOLDEN_FILE = Path("test/fixtures/golden/metrics.ndjson")
 
 # sample "golden" object
 example = Metrics(
@@ -34,10 +39,9 @@ example = Metrics(
 )
 
 # ensure golden directory exists
-# GOLDEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+GOLDEN_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 # write as NDJSON (one line per object)
-with open(GOLDEN_FILE, "w") as f:
-    f.write(example.model_dump_json() + "\n")
+GOLDEN_FILE.write_text(example.model_dump_json() + "\n")
 
 print(f"Golden file written to {GOLDEN_FILE}")

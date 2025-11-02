@@ -21,6 +21,7 @@ class Metric:
             metric computation, such as intermediate values, data sources, or
             explanations
     """
+
     name: str
     value: Union[float, Dict[str, float]]
     latency_ms: int

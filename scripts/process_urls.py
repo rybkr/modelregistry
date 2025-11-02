@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 
+import os
 import json
 import sys
 import time
 from pathlib import Path
+
+# Add parent directory (project root) to path to import from src
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from metrics.net_score import NetScore
 from metrics_engine import compute_all_metrics, flatten_to_ndjson

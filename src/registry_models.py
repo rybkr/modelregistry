@@ -17,6 +17,7 @@ class Package:
         metadata: Additional package metadata (e.g., URL, scores, readme)
         s3_key: Optional S3 storage key for package content
     """
+
     id: str
     name: str
     version: str

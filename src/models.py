@@ -33,6 +33,7 @@ class SizeScore(BaseModel):
         desktop_pc: Compatibility score for desktop PC deployment
         aws_server: Compatibility score for AWS server deployment
     """
+
     raspberry_pi: float = Field(1.0, ge=0, le=1)
     jetson_nano: float = Field(1.0, ge=0, le=1)
     desktop_pc: float = Field(1.0, ge=0, le=1)
@@ -67,6 +68,7 @@ class Metrics(BaseModel):
         code_quality: Code quality assessment (0.0-1.0)
         code_quality_latency: Computation time in milliseconds
     """
+
     name: str
     category: Annotated[str, StringConstraints(pattern="^(MODEL|DATASET|CODE)$")]
 

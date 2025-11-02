@@ -40,7 +40,22 @@ line_length = 88
 [tool.mypy]
 strict = true
 files = ["src", "test"]
-mypy_path = "src"
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "flask",
+    "flask_cors",
+    "flask.views",
+    "huggingface_hub",
+    "boto3",
+    "requests",
+]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["test"]

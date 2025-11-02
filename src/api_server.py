@@ -2,8 +2,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from datetime import datetime
 import uuid
-import sys
-import os
+
 
 from registry_models import Package
 from storage import storage
@@ -11,7 +10,6 @@ from metrics_engine import compute_all_metrics
 from models import Model
 from resources.model_resource import ModelResource
 
-sys.path.insert(0, os.path.dirname(__file__))
 
 app = Flask(__name__)
 CORS(app)
