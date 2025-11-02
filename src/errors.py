@@ -18,11 +18,18 @@ INTERNAL_ERROR = "INTERNAL_ERROR"
 class AppError(Exception):
     """A custom exception class for application-specific errors.
 
+    This exception provides structured error information including error codes,
+    messages, optional underlying causes, and contextual data. Sensitive fields
+    like authorization tokens are automatically filtered from string representations.
+
     Attributes:
-        code:    A short, stable error code representing the type of error.
-        message: A human-readable error message.
-        cause:   The underlying exception that caused this error, if any.
-        context: Additional context about the error, such as request details.
+        code (str): A short, stable error code representing the type of error
+            (e.g., NETWORK_ERROR, RATE_LIMIT, AUTH_ERROR)
+        message (str): A human-readable error message describing the error
+        cause (Optional[BaseException]): The underlying exception that caused
+            this error, if any
+        context (Optional[dict[str, Any]]): Additional context about the error,
+            such as request details, URLs, or response data
     """
 
     code: str
@@ -31,6 +38,15 @@ class AppError(Exception):
     context: Optional[dict[str, Any]] = None
 
     def __str__(self) -> str:
+        """Return a string representation of the error.
+
+        Formats the error as "CODE: message" with optional context information.
+        Automatically filters sensitive fields (authorization, api_key) from
+        the context to prevent credential leakage in logs.
+
+        Returns:
+            str: Formatted error string with code, message, and sanitized context
+        """
         base = f"{self.code}: {self.message}"
         if self.context:
             safe_ctx = {

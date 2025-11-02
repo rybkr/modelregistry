@@ -67,9 +67,7 @@ class TestCodeQuality:
             return DummyRepo(tmp_path)
 
         # Patch open_codebase so we don’t actually fetch anything
-        monkeypatch.setattr(
-            "metrics.code_quality.open_codebase", fake_open_codebase
-        )
+        monkeypatch.setattr("metrics.code_quality.open_codebase", fake_open_codebase)
 
         # Patch linters to fixed values
         monkeypatch.setattr(CodeQuality, "_flake8_score", lambda self, repo: 0.8)

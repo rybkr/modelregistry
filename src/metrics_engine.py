@@ -1,4 +1,3 @@
-import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict
@@ -9,6 +8,19 @@ from models import Model
 
 
 def _safe_run(metric: Metric, model: Model) -> Metric:
+    """Execute metric computation with error handling.
+
+    Runs the metric's compute() method and catches exceptions, setting
+    default values on failure. For size_score metrics, returns a dict
+    with zero scores for all deployment targets.
+
+    Args:
+        metric: The metric to compute
+        model: The model to evaluate
+
+    Returns:
+        Metric: The metric with computed or error values
+    """
     start = time.perf_counter()
     try:
         metric.compute(model)
@@ -30,6 +42,15 @@ def _safe_run(metric: Metric, model: Model) -> Metric:
 def compute_all_metrics(
     model: Model, include: set[str] | None = None
 ) -> dict[str, Metric]:
+    """Compute metrics for a model in parallel.
+
+    Args:
+        model: The model to evaluate
+        include: Optional set of metric names to compute. If None, computes all metrics
+
+    Returns:
+        dict[str, Metric]: Dictionary mapping metric names to computed Metric objects
+    """
     results: dict[str, Metric] = {}
     metrics = [m for m in ALL_METRICS if include is None or m.name in include]
 
@@ -45,6 +66,14 @@ def compute_all_metrics(
 
 
 def flatten_to_ndjson(results: Dict[str, Metric]) -> Dict[str, Any]:
+    """Flatten metric results to a simple dictionary for NDJSON output.
+
+    Args:
+        results: Dictionary of computed metrics
+
+    Returns:
+        dict: Flattened dictionary with metric values and latencies
+    """
     out: Dict[str, Any] = {}
     for metric in results.values():
         out[metric.name] = metric.value

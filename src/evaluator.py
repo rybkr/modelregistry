@@ -9,6 +9,13 @@ from resources.model_resource import ModelResource
 
 
 def main(path: str) -> None:
+    """Evaluate models from a file of URLs and output results as NDJSON.
+
+    Reads a file containing model URLs (one per line), evaluates each model
+    using the metrics engine, and outputs the results as newline-delimited
+    JSON (NDJSON) to stdout. Each line of output represents one model's
+    evaluation results.
+    """
     urls = Path(path).read_text().splitlines()
     for url in urls:
         if not url.strip() or url.startswith("#"):
