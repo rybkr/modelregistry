@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Package Details{% endblock %}
+
+{% block content %}
+<div class="row" data-package-id="{{ package_id }}">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ url_for('index') }}">Packages</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Package Details</li>
+            </ol>
+        </nav>
+
+        <!-- Loading indicator -->
+        <div id="loading-indicator" class="text-center py-5" role="status" aria-live="polite">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading package details...</span>
+            </div>
+            <p class="mt-2">Loading package details...</p>
+        </div>
+
+        <!-- Package Details -->
+        <div id="package-details" style="display: none;">
+            <!-- Header Card -->
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h2 class="h4 mb-0" id="package-name">Package Name</h2>
+                    <div>
+                        <button type="button" class="btn btn-primary me-2" id="rate-btn" aria-label="Rate this package">
+                            <i class="bi bi-star me-1" aria-hidden="true"></i>Rate Package
+                        </button>
+                        <button type="button" class="btn btn-danger" id="delete-btn" aria-label="Delete this package">
+                            <i class="bi bi-trash me-1" aria-hidden="true"></i>Delete
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <dl class="row">
+                                <dt class="col-sm-4">Package ID:</dt>
+                                <dd class="col-sm-8"><code id="package-id"></code></dd>
+                                
+                                <dt class="col-sm-4">Version:</dt>
+                                <dd class="col-sm-8" id="package-version"></dd>
+                                
+                                <dt class="col-sm-4">Uploaded By:</dt>
+                                <dd class="col-sm-8" id="package-uploaded-by"></dd>
+                                
+                                <dt class="col-sm-4">Upload Date:</dt>
+                                <dd class="col-sm-8" id="package-upload-date"></dd>
+                                
+                                <dt class="col-sm-4">Size:</dt>
+                                <dd class="col-sm-8" id="package-size"></dd>
+                            </dl>
+                        </div>
+                        <div class="col-md-6">
+                            <dl class="row">
+                                <dt class="col-sm-4">URL:</dt>
+                                <dd class="col-sm-8">
+                                    <a id="package-url" href="#" target="_blank" rel="noopener noreferrer">View Source</a>
+                                </dd>
+                                
+                                <dt class="col-sm-4">S3 Key:</dt>
+                                <dd class="col-sm-8">
+                                    <code id="package-s3-key">N/A</code>
+                                </dd>
+                            </dl>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Metrics Card -->
+            <div class="card mb-4" id="metrics-card" style="display: none;">
+                <div class="card-header">
+                    <h3 class="h5 mb-0">Quality Metrics</h3>
+                </div>
+                <div class="card-body">
+                    <div id="metrics-content">
+                        <!-- Metrics will be populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Metadata Card -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="h5 mb-0">Metadata</h3>
+                </div>
+                <div class="card-body">
+                    <pre id="package-metadata" class="bg-light p-3 rounded"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/package_detail.js') }}"></script>
+{% endblock %}
+

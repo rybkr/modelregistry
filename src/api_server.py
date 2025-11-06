@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS
 from datetime import datetime
 import uuid
@@ -11,7 +11,7 @@ from models import Model
 from resources.model_resource import ModelResource
 
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='templates', static_folder='static')
 CORS(app)
 
 DEFAULT_USERNAME = "ece30861defaultadminuser"
@@ -41,7 +41,17 @@ def health():
 
 
 @app.route("/", methods=["GET"])
-def root():
+def index():
+    """Serve the main package listing page.
+
+    Returns:
+        HTML: Package listing page
+    """
+    return render_template("index.html")
+
+
+@app.route("/api", methods=["GET"])
+def api_root():
     """Return basic API information.
 
     Provides version and status information for the Model Registry API.
@@ -159,23 +169,29 @@ def get_package(package_id):
     """Retrieve a specific package by ID.
 
     Fetches detailed information about a package using its unique identifier.
+    Returns JSON for API requests or HTML page for browser requests.
 
     Args:
         package_id (str): Unique package identifier (UUID)
 
     Returns:
-        tuple: JSON response and HTTP status code
-            Success (200): Package details as dictionary
+        tuple or HTML: JSON response and HTTP status code, or HTML page
+            Success (200): Package details as dictionary or HTML page
             Error (404): Package not found
             Error (500): Server error during retrieval
     """
-    try:
-        package = storage.get_package(package_id)
-        if not package:
-            return jsonify({"error": "Package not found"}), 404
-        return jsonify(package.to_dict()), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    # Check if this is an API request (Accept: application/json)
+    if request.headers.get("Accept", "").startswith("application/json"):
+        try:
+            package = storage.get_package(package_id)
+            if not package:
+                return jsonify({"error": "Package not found"}), 404
+            return jsonify(package.to_dict()), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+    else:
+        # Return HTML page for browser requests
+        return render_template("package_detail.html", package_id=package_id)
 
 
 @app.route("/packages/<package_id>", methods=["DELETE"])
@@ -353,6 +369,40 @@ def reset_registry():
         return jsonify({"message": "Registry reset successfully"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# Frontend page routes
+@app.route("/upload", methods=["GET"])
+def upload_package_page():
+    """Serve the upload package page.
+
+    Returns:
+        HTML: Upload package page
+    """
+    return render_template("upload.html")
+
+
+@app.route("/ingest", methods=["GET"])
+def ingest_page():
+    """Serve the ingest model page.
+
+    Returns:
+        HTML: Ingest model page
+    """
+    return render_template("ingest.html")
+
+
+@app.route("/health", methods=["GET"])
+def health_dashboard():
+    """Serve the health dashboard page or return JSON health data.
+
+    Returns:
+        HTML or JSON: Health dashboard page or health data
+    """
+    # Check if this is an API request (Accept: application/json)
+    if request.headers.get("Accept", "").startswith("application/json"):
+        return health()
+    return render_template("health.html")
 
 
 if __name__ == "__main__":

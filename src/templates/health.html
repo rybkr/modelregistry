@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}Health Dashboard{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="h2 mb-4">System Health Dashboard</h1>
+
+        <!-- Health Status Cards -->
+        <div class="row mb-4">
+            <div class="col-md-4 mb-3">
+                <div class="card text-white bg-success" id="status-card">
+                    <div class="card-body">
+                        <h3 class="card-title h5">
+                            <i class="bi bi-check-circle me-2" aria-hidden="true"></i>Status
+                        </h3>
+                        <p class="card-text h4" id="health-status">Healthy</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-3">
+                <div class="card">
+                    <div class="card-body">
+                        <h3 class="card-title h5">
+                            <i class="bi bi-box-seam me-2" aria-hidden="true"></i>Total Packages
+                        </h3>
+                        <p class="card-text h4" id="packages-count">-</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-3">
+                <div class="card">
+                    <div class="card-body">
+                        <h3 class="card-title h5">
+                            <i class="bi bi-clock me-2" aria-hidden="true"></i>Last Updated
+                        </h3>
+                        <p class="card-text" id="last-updated">-</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Health Details -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h2 class="h5 mb-0">Health Details</h2>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="refresh-health" aria-label="Refresh health data">
+                    <i class="bi bi-arrow-clockwise me-1" aria-hidden="true"></i>Refresh
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="health-details">
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading health data...</span>
+                        </div>
+                        <p class="mt-2">Loading health data...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Actions -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="h5 mb-0">System Actions</h2>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-warning" role="alert">
+                    <i class="bi bi-exclamation-triangle me-2" aria-hidden="true"></i>
+                    <strong>Warning:</strong> The reset action will delete all packages from the registry. This action cannot be undone.
+                </div>
+                <button type="button" class="btn btn-danger" id="reset-registry" aria-label="Reset registry">
+                    <i class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></i>Reset Registry
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/health.js') }}"></script>
+{% endblock %}
+

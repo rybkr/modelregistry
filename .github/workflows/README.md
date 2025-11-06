@@ -1,14 +1,20 @@
 # CI/CD Pipeline
 
-This repository includes a comprehensive CI/CD pipeline using GitHub Actions.
+This repository includes comprehensive CI/CD pipelines using GitHub Actions.
 
-## Workflow Overview
+## Workflows
 
-The main workflow (`.github/workflows/ci.yml`) runs on:
+### CI (`ci.yml`)
+Continuous Integration workflow runs on:
 - Push to `main` or `develop` branches
 - Pull requests to `main` or `develop` branches
 
-## Jobs
+### CD (`cd.yaml`)
+Continuous Deployment workflow runs on:
+- Push to `main` branch
+- Manual trigger via `workflow_dispatch`
+
+## CI Jobs
 
 ### Test
 Runs across Python 3.9, 3.10, 3.11, and 3.12:
@@ -27,6 +33,22 @@ Runs on main branch pushes after tests pass:
 - Builds Python package
 - Verifies build artifacts
 - Placeholder for PyPI publishing
+
+### Security
+Runs security scans:
+- Bandit for Python security issues
+- Safety for known vulnerabilities
+
+## CD Jobs
+
+### Deploy
+Automatically deploys to AWS Elastic Beanstalk on push to main:
+- Configure AWS credentials
+- Install Elastic Beanstalk CLI
+- Deploy application
+- Run health checks
+
+See [AWS_DEPLOYMENT_GUIDE.md](../../AWS_DEPLOYMENT_GUIDE.md) for setup instructions.
 
 ## Local Development
 

@@ -1,4 +1,4 @@
-name: CD - Deploy to AWS
+name: CD - Deploy to AWS Elastic Beanstalk
 
 on:
   push:
@@ -12,7 +12,9 @@ jobs:
   deploy:
     name: Deploy to AWS
     runs-on: ubuntu-latest
-    
+    # Only deploy if CI passes
+    needs: []  # Add 'test' here once CI job exists, like: needs: [test]
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -22,26 +24,33 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      
-      - name: Install dependencies
-        run: |
-          python -m pip install -U pip
-          pip install -e .[dev]
-      
-      - name: Run tests before deploy
-        run: |
-          pytest -q --maxfail=1 --disable-warnings \
-            -m "not integration and not e2e and not slow and not perf"
-      
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
-      
-      # TODO(rybkr): Actual deployment steps
-      - name: Placeholder - Deploy step
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Install Elastic Beanstalk CLI
+        run: pip install awsebcli
+
+      - name: Deploy to Elastic Beanstalk
         run: |
-          echo "Deployment step will be added once AWS infrastructure is set up"
-          echo "Target: AWS Free Tier services"
+          # Initialize EB if not already done
+          eb init model-registry --region ${{ secrets.AWS_REGION || 'us-east-1' }} --platform "Python 3.11" --non-interactive || true
+          
+          # Deploy to environment (creates if doesn't exist)
+          eb deploy model-registry-production --non-interactive --timeout 30 || eb create model-registry-production --timeout 30
+
+      - name: Get deployment URL
+        run: |
+          eb status model-registry-production
+          eb list
+
+      - name: Health check
+        run: |
+          URL=$(eb status model-registry-production | grep "CNAME" | awk '{print $2}')
+          echo "Deployed to: http://$URL"
+          curl -f http://$URL/health || exit 1
+

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}Ingest from HuggingFace{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <h1 class="h2 mb-4">Ingest Model from HuggingFace</h1>
+
+        <div class="alert alert-info" role="alert">
+            <i class="bi bi-info-circle me-2" aria-hidden="true"></i>
+            <strong>Note:</strong> The model must score at least 0.5 on all non-latency metrics to be ingested. 
+            The system will automatically evaluate the model before ingestion.
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h2 class="h5 mb-0">HuggingFace Model URL</h2>
+            </div>
+            <div class="card-body">
+                <form id="ingest-form" role="form" aria-label="Ingest model form">
+                    <div class="mb-3">
+                        <label for="model-url" class="form-label">HuggingFace Model URL <span class="text-danger" aria-label="required">*</span></label>
+                        <input type="url" class="form-control" id="model-url" required 
+                               placeholder="https://huggingface.co/model-name" 
+                               aria-required="true" aria-describedby="model-url-help">
+                        <div id="model-url-help" class="form-text">Enter the full URL to a HuggingFace model (must start with https://huggingface.co/)</div>
+                    </div>
+
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{{ url_for('index') }}" class="btn btn-outline-secondary" role="button">Cancel</a>
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-cloud-download me-1" aria-hidden="true"></i>Ingest Model
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Evaluation Progress -->
+        <div id="evaluation-progress" class="card mt-4" style="display: none;">
+            <div class="card-body">
+                <h3 class="h6">Evaluation Progress</h3>
+                <div class="progress mb-3" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                         style="width: 0%"></div>
+                </div>
+                <p id="evaluation-status" class="mb-0">Evaluating model metrics...</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/ingest.js') }}"></script>
+{% endblock %}
+

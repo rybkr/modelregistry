@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}Package List{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="h2">Model Packages</h1>
+            <div>
+                <a href="{{ url_for('upload_package_page') }}" class="btn btn-primary me-2" role="button">
+                    <i class="bi bi-upload me-1" aria-hidden="true"></i>Upload Package
+                </a>
+                <a href="{{ url_for('ingest_page') }}" class="btn btn-success" role="button">
+                    <i class="bi bi-cloud-download me-1" aria-hidden="true"></i>Ingest from HuggingFace
+                </a>
+            </div>
+        </div>
+
+        <!-- Search and Filter Section -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <form id="search-form" class="row g-3" role="search" aria-label="Search packages">
+                    <div class="col-md-8">
+                        <label for="search-query" class="form-label">Search Packages</label>
+                        <input type="text" class="form-control" id="search-query" 
+                               placeholder="Enter model name or search term..." 
+                               aria-label="Search query">
+                    </div>
+                    <div class="col-md-2">
+                        <label for="search-limit" class="form-label">Results per page</label>
+                        <select class="form-select" id="search-limit" aria-label="Results per page">
+                            <option value="10">10</option>
+                            <option value="25" selected>25</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="use-regex" aria-label="Use regular expression">
+                            <label class="form-check-label" for="use-regex">
+                                Regex
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-search me-1" aria-hidden="true"></i>Search
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" id="clear-search">
+                            <i class="bi bi-x-circle me-1" aria-hidden="true"></i>Clear
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Loading indicator -->
+        <div id="loading-indicator" class="text-center py-5" style="display: none;" role="status" aria-live="polite">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading packages...</span>
+            </div>
+            <p class="mt-2">Loading packages...</p>
+        </div>
+
+        <!-- Packages List -->
+        <div id="packages-container">
+            <div class="card">
+                <div class="card-body">
+                    <p class="text-muted text-center py-5">No packages found. Upload or ingest a model to get started.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pagination -->
+        <nav id="pagination-container" aria-label="Package pagination" style="display: none;">
+            <ul class="pagination justify-content-center">
+                <!-- Pagination will be populated by JavaScript -->
+            </ul>
+        </nav>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/index.js') }}"></script>
+{% endblock %}
+

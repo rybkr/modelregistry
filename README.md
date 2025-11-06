@@ -9,9 +9,10 @@ A trustworthy model registry for machine learning models with REST API, web inte
 - **CI/CD Pipeline**: GitHub Actions for testing and deployment
 - **Storage Layer**: In-memory storage (to be migrated to AWS DynamoDB)
 - **API Testing**: Basic test suite for CRUD operations
+- **AWS Deployment**: Elastic Beanstalk setup with automated GitHub Actions deployment
 
 ### 🚧 In Progress  
-- **AWS Integration**: Setting up S3, DynamoDB, and Lambda/EC2
+- **AWS Integration**: S3, DynamoDB integration
 - **Model Ingest**: HuggingFace model ingestion with Phase 1 metrics
 - **Enumerate**: Search and pagination for large registries
 - **Rate Endpoint**: Integrate Phase 1 scoring metrics
@@ -50,6 +51,35 @@ The server will start on `http://localhost:8000`
 ```bash
 pytest test/test_api_crud.py
 ```
+
+## AWS Deployment 🚀
+
+Deploy the Model Registry API to AWS Elastic Beanstalk in minutes!
+
+### Quick Deploy (5 minutes)
+
+```bash
+# 1. Configure AWS
+aws configure
+
+# 2. Run setup script
+./scripts/aws_setup.sh
+
+# 3. Add secrets to GitHub
+# Go to: Settings → Secrets → Actions
+# Add: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
+
+# 4. Push to deploy
+git push origin main
+```
+
+**Cost**: $0/month on AWS Free Tier ✅
+
+### Documentation
+
+- **[QUICK_START_AWS.md](./QUICK_START_AWS.md)** - 5-minute quick start
+- **[AWS_DEPLOYMENT_GUIDE.md](./AWS_DEPLOYMENT_GUIDE.md)** - Detailed guide
+- **[AWS_SETUP_CHECKLIST.md](./AWS_SETUP_CHECKLIST.md)** - Step-by-step checklist
 
 ## Phase 1 CLI (Legacy)
 
