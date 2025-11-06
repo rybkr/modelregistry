@@ -148,8 +148,7 @@ def list_packages():
         - limit (int, optional): Maximum number of results (default: 100)
         - query (str, optional): Search query string
         - regex (bool, optional): Enable regex search mode (default: false)
-        - min_size (int, optional): Filter - returns only models at or above the given size
-        - max_size (int, optional): Filter - returns only models at or below the given size
+        - version (str, optional): A version string filter.
 
     Returns:
         tuple: JSON response and HTTP status code
@@ -165,8 +164,7 @@ def list_packages():
         limit = int(request.args.get("limit", 100))
         query = request.args.get("query", "")
         regex = request.args.get("regex", "false").lower() == "true"
-        min_size = int(request.args.get("min_size", 0))
-        max_size = int(request.args.get("min_size", 0))
+        version = request.args.get("version", "")
 
         if query:
             packages = storage.search_packages(query, use_regex=regex)
@@ -174,11 +172,6 @@ def list_packages():
         else:
             packages = storage.list_packages(offset=offset, limit=limit)
 
-        if min_size > 0:
-            packages = filter(lambda package: package.size_bytes >= min_size, packages)
-
-        if max_size > 0:
-            packages = filter(lambda package: package.size_bytes <= min_size, packages)
         return jsonify(
             {
                 "packages": [p.to_dict() for p in packages],
