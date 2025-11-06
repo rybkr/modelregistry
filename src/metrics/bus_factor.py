@@ -60,7 +60,9 @@ class BusFactor(Metric):
     ) -> Dict[str, float]:
         """Compute the base score, recency score, and final score."""
         contributor_score = min(1.0, contributors / 10.0)
-        base_score = contributor_score / max(1, n_code)
+        # Use contributor_score directly - dividing by n_code was causing scores to be too small
+        # n_code is not a reliable indicator and shouldn't penalize the bus factor
+        base_score = contributor_score
 
         recency_score = 1.0
         if freshest:
