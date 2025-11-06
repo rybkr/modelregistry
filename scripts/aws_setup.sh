@@ -78,8 +78,74 @@ if ! aws iam get-user --user-name github-actions-deployer &> /dev/null; then
       --policy-arn arn:aws:iam::aws:policy/IAMFullAccess
     
     echo -e "${GREEN}✅ Policies attached${NC}"
+    
+    # Add custom inline policy for S3 bucket ownership controls (required for EB)
+    echo "Adding S3 bucket ownership controls permission..."
+    aws iam put-user-policy \
+      --user-name github-actions-deployer \
+      --policy-name EBDeploymentS3Permissions \
+      --policy-document '{
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": [
+              "s3:PutBucketOwnershipControls",
+              "s3:GetBucketOwnershipControls",
+              "s3:DeleteBucketOwnershipControls"
+            ],
+            "Resource": "arn:aws:s3:::elasticbeanstalk-*"
+          },
+          {
+            "Effect": "Allow",
+            "Action": [
+              "s3:PutBucketOwnershipControls",
+              "s3:GetBucketOwnershipControls",
+              "s3:DeleteBucketOwnershipControls"
+            ],
+            "Resource": "arn:aws:s3:::elasticbeanstalk-*/*"
+          }
+        ]
+      }'
+    
+    echo -e "${GREEN}✅ S3 ownership controls permission added${NC}"
 else
     echo -e "${GREEN}✅ IAM user 'github-actions-deployer' exists${NC}"
+    
+    # Ensure the S3 ownership controls permission is added even if user already exists
+    echo "Checking S3 bucket ownership controls permission..."
+    if ! aws iam get-user-policy --user-name github-actions-deployer --policy-name EBDeploymentS3Permissions &> /dev/null; then
+        echo "Adding S3 bucket ownership controls permission..."
+        aws iam put-user-policy \
+          --user-name github-actions-deployer \
+          --policy-name EBDeploymentS3Permissions \
+          --policy-document '{
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": [
+                  "s3:PutBucketOwnershipControls",
+                  "s3:GetBucketOwnershipControls",
+                  "s3:DeleteBucketOwnershipControls"
+                ],
+                "Resource": "arn:aws:s3:::elasticbeanstalk-*"
+              },
+              {
+                "Effect": "Allow",
+                "Action": [
+                  "s3:PutBucketOwnershipControls",
+                  "s3:GetBucketOwnershipControls",
+                  "s3:DeleteBucketOwnershipControls"
+                ],
+                "Resource": "arn:aws:s3:::elasticbeanstalk-*/*"
+              }
+            ]
+          }'
+        echo -e "${GREEN}✅ S3 ownership controls permission added${NC}"
+    else
+        echo -e "${GREEN}✅ S3 ownership controls permission already exists${NC}"
+    fi
 fi
 
 # Initialize Elastic Beanstalk if not already done
