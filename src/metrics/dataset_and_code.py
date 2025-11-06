@@ -106,7 +106,11 @@ class DatasetAndCode(Metric):
                 # Check for keywords first (for consistency and determinism)
                 text_lower = model_text.lower()
                 dataset_keywords = ["dataset", "data", "training data", "corpus", "training set"]
-                code_keywords = ["code", "github", "example", "script", "notebook", "colab", "demo", "repository", "repo"]
+                code_keywords = [
+                    "code", "github", "example", "script", "notebook", "colab", "demo", 
+                    "repository", "repo", "open-source", "open source", "source code",
+                    "open-sourced", "open sourced", "available", "download", "checkpoint"
+                ]
                 has_dataset = any(keyword in text_lower for keyword in dataset_keywords)
                 has_code = any(keyword in text_lower for keyword in code_keywords)
                 
@@ -163,7 +167,11 @@ class DatasetAndCode(Metric):
                 # Check for keywords first (for consistency and determinism)
                 text_lower = code_text.lower()
                 dataset_keywords = ["dataset", "data", "training data", "corpus", "training set"]
-                code_keywords = ["code", "github", "example", "script", "notebook", "colab", "demo", "repository", "repo"]
+                code_keywords = [
+                    "code", "github", "example", "script", "notebook", "colab", "demo", 
+                    "repository", "repo", "open-source", "open source", "source code",
+                    "open-sourced", "open sourced", "available", "download", "checkpoint"
+                ]
                 has_dataset = any(keyword in text_lower for keyword in dataset_keywords)
                 has_code = any(keyword in text_lower for keyword in code_keywords)
                 

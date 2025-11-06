@@ -101,6 +101,7 @@ class NetScore(Metric):
                         f"final_score={self.value:.3f}"
                     )
 
+            self.value = self.value ** 0.5
             self.latency_ms = int(round((time.perf_counter() - start) * 1000))
             logger.debug(
                 f"Final NetScore={self.value:.3f}, latency={self.latency_ms}ms"
