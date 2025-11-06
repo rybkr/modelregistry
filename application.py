@@ -8,11 +8,24 @@ It imports from the src directory.
 import sys
 import os
 
+# Get the directory where this file is located (project root)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SRC_DIR = os.path.join(BASE_DIR, 'src')
+
 # Add src directory to Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
 
 # Import from the actual API server
-from api_server import app
+# Note: We import after adding src to path, so imports in api_server.py will work
+try:
+    from api_server import app
+except Exception as e:
+    # Log the error to stderr so it appears in EB logs
+    import traceback
+    sys.stderr.write(f"ERROR: Failed to import application: {e}\n")
+    sys.stderr.write(traceback.format_exc())
+    raise
 
 # Make the app object available for WSGI
 application = app

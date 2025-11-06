@@ -2,7 +2,7 @@ from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS
 from datetime import datetime
 import uuid
-
+import os
 
 from registry_models import Package
 from storage import storage
@@ -10,8 +10,12 @@ from metrics_engine import compute_all_metrics
 from models import Model
 from resources.model_resource import ModelResource
 
+# Get the directory where this file is located (src directory)
+SRC_DIR = os.path.dirname(os.path.abspath(__file__))
+TEMPLATE_DIR = os.path.join(SRC_DIR, 'templates')
+STATIC_DIR = os.path.join(SRC_DIR, 'static')
 
-app = Flask(__name__, template_folder='templates', static_folder='static')
+app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
 CORS(app)
 
 DEFAULT_USERNAME = "ece30861defaultadminuser"
