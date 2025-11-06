@@ -12,8 +12,8 @@ from resources.model_resource import ModelResource
 
 # Get the directory where this file is located (src directory)
 SRC_DIR = os.path.dirname(os.path.abspath(__file__))
-TEMPLATE_DIR = os.path.join(SRC_DIR, 'templates')
-STATIC_DIR = os.path.join(SRC_DIR, 'static')
+TEMPLATE_DIR = os.path.join(SRC_DIR, "templates")
+STATIC_DIR = os.path.join(SRC_DIR, "static")
 
 app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
 CORS(app)
@@ -56,12 +56,12 @@ def index():
     # Only return HTML if explicitly requesting HTML
     accept_header = request.headers.get("Accept", "")
     wants_html = (
-        "text/html" in accept_header and
-        "application/json" not in accept_header and
-        accept_header != "*/*" and
-        accept_header != ""
+        "text/html" in accept_header
+        and "application/json" not in accept_header
+        and accept_header != "*/*"
+        and accept_header != ""
     )
-    
+
     if wants_html:
         return render_template("index.html")
     else:
@@ -148,6 +148,8 @@ def list_packages():
         - limit (int, optional): Maximum number of results (default: 100)
         - query (str, optional): Search query string
         - regex (bool, optional): Enable regex search mode (default: false)
+        - min_size (int, optional): Filter - returns only models at or above the given size
+        - max_size (int, optional): Filter - returns only models at or below the given size
 
     Returns:
         tuple: JSON response and HTTP status code
@@ -163,6 +165,8 @@ def list_packages():
         limit = int(request.args.get("limit", 100))
         query = request.args.get("query", "")
         regex = request.args.get("regex", "false").lower() == "true"
+        min_size = int(request.args.get("min_size", 0))
+        max_size = int(request.args.get("min_size", 0))
 
         if query:
             packages = storage.search_packages(query, use_regex=regex)
@@ -170,6 +174,11 @@ def list_packages():
         else:
             packages = storage.list_packages(offset=offset, limit=limit)
 
+        if min_size > 0:
+            packages = filter(lambda package: package.size_bytes >= min_size, packages)
+
+        if max_size > 0:
+            packages = filter(lambda package: package.size_bytes <= min_size, packages)
         return jsonify(
             {
                 "packages": [p.to_dict() for p in packages],
@@ -204,13 +213,12 @@ def get_package(package_id):
     # Only return HTML if explicitly requesting HTML
     accept_header = request.headers.get("Accept", "")
     content_type = request.headers.get("Content-Type", "")
-    
+
     # Return HTML only if explicitly requesting HTML
     wants_html = (
-        "text/html" in accept_header and
-        "application/json" not in accept_header
+        "text/html" in accept_header and "application/json" not in accept_header
     )
-    
+
     if wants_html:
         # Return HTML page for browser requests
         return render_template("package_detail.html", package_id=package_id)
