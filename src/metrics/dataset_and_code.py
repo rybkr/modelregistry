@@ -103,9 +103,50 @@ class DatasetAndCode(Metric):
                 model_text = try_readme(model.model)
 
             if model_text:
-                r_model = _query_genai(self._build_prompt(model_text))
-                scores.append(r_model.get("score", 0.0))
-                details["model"] = r_model
+                # Check for keywords first (for consistency and determinism)
+                text_lower = model_text.lower()
+                dataset_keywords = ["dataset", "data", "training data", "corpus", "training set"]
+                code_keywords = ["code", "github", "example", "script", "notebook", "colab", "demo", "repository", "repo"]
+                has_dataset = any(keyword in text_lower for keyword in dataset_keywords)
+                has_code = any(keyword in text_lower for keyword in code_keywords)
+                
+                # Determine minimum score based on keywords
+                if has_dataset and has_code:
+                    min_score = 0.5
+                elif has_dataset or has_code:
+                    min_score = 0.25
+                else:
+                    min_score = 0.0
+                
+                try:
+                    r_model = _query_genai(self._build_prompt(model_text))
+                    api_score = r_model.get("score", 0.0)
+                    
+                    # Use the maximum of API score and minimum score from keywords
+                    # This ensures consistency: if keywords found, always get at least the minimum
+                    final_score = max(api_score, min_score)
+                    
+                    if final_score > api_score:
+                        r_model["score"] = final_score
+                        r_model["justification"] = r_model.get("justification", "") + f" (Adjusted: dataset/code keywords found, minimum {min_score})"
+                        logger.info(f"DatasetAndCode score for model adjusted from {api_score} to {final_score} based on keywords")
+                    
+                    scores.append(final_score)
+                    details["model"] = r_model
+                except Exception as api_error:
+                    # If API fails, use keyword-based score
+                    scores.append(min_score)
+                    if min_score > 0.0:
+                        details["model"] = {
+                            "score": min_score,
+                            "justification": f"API failed but found dataset/code mentions in README: {str(api_error)}"
+                        }
+                        logger.warning(f"DatasetAndCode API failed for model but found keywords, using keyword-based score {min_score}")
+                    else:
+                        details["model"] = {
+                            "score": 0.0,
+                            "justification": f"API failed and no dataset/code mentions found: {str(api_error)}"
+                        }
             else:
                 scores.append(0.0)
                 details["model"] = {
@@ -119,9 +160,49 @@ class DatasetAndCode(Metric):
                 code_text = try_readme(model.code)
 
             if code_text:
-                r_code = _query_genai(self._build_prompt(code_text))
-                scores.append(r_code.get("score", 0.0))
-                details["code"] = r_code
+                # Check for keywords first (for consistency and determinism)
+                text_lower = code_text.lower()
+                dataset_keywords = ["dataset", "data", "training data", "corpus", "training set"]
+                code_keywords = ["code", "github", "example", "script", "notebook", "colab", "demo", "repository", "repo"]
+                has_dataset = any(keyword in text_lower for keyword in dataset_keywords)
+                has_code = any(keyword in text_lower for keyword in code_keywords)
+                
+                # Determine minimum score based on keywords
+                if has_dataset and has_code:
+                    min_score = 0.5
+                elif has_dataset or has_code:
+                    min_score = 0.25
+                else:
+                    min_score = 0.0
+                
+                try:
+                    r_code = _query_genai(self._build_prompt(code_text))
+                    api_score = r_code.get("score", 0.0)
+                    
+                    # Use the maximum of API score and minimum score from keywords
+                    final_score = max(api_score, min_score)
+                    
+                    if final_score > api_score:
+                        r_code["score"] = final_score
+                        r_code["justification"] = r_code.get("justification", "") + f" (Adjusted: dataset/code keywords found, minimum {min_score})"
+                        logger.info(f"DatasetAndCode score for code adjusted from {api_score} to {final_score} based on keywords")
+                    
+                    scores.append(final_score)
+                    details["code"] = r_code
+                except Exception as api_error:
+                    # If API fails, use keyword-based score
+                    scores.append(min_score)
+                    if min_score > 0.0:
+                        details["code"] = {
+                            "score": min_score,
+                            "justification": f"API failed but found dataset/code mentions: {str(api_error)}"
+                        }
+                        logger.warning(f"DatasetAndCode API failed for code but found keywords, using keyword-based score {min_score}")
+                    else:
+                        details["code"] = {
+                            "score": 0.0,
+                            "justification": f"API failed and no dataset/code mentions found: {str(api_error)}"
+                        }
             else:
                 scores.append(0.0)
                 details["code"] = {

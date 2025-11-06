@@ -42,15 +42,53 @@ class BusFactor(Metric):
         return {"model": last_model, "dataset": last_dataset, "code": last_code}
 
     def _get_contributors(self, model: Model) -> int:
-        """Fetch number of contributors from code metadata (if available)."""
+        """Fetch number of contributors from code or model metadata."""
         contributors: int = 1
+        
+        # Try code first (most reliable)
         if model.code:
             try:
                 code_meta = model.code.fetch_metadata()
-                contributors = int(code_meta.get("contributors", contributors))
+                contributors = int(code_meta.get("contributors", 0))
+                if contributors > 0:
+                    return contributors
             except Exception:
                 pass
-        return contributors
+        
+        # Fallback to model metadata (HuggingFace models have author info)
+        if model.model:
+            try:
+                model_meta = model.model.fetch_metadata()
+                # HuggingFace models might have author information
+                # Check for various fields that indicate multiple contributors
+                author = model_meta.get("author", "")
+                if author and "," in author:
+                    # Multiple authors separated by comma
+                    contributors = len([a.strip() for a in author.split(",") if a.strip()])
+                elif author:
+                    contributors = 1
+                
+                # Also check if there's a library_name or organization (indicates team effort)
+                library_name = model_meta.get("library_name", "")
+                if library_name and library_name != "transformers":
+                    # Custom library suggests team effort
+                    contributors = max(contributors, 2)
+                
+                # Check for organization in model ID (e.g., "deepseek-ai/DeepSeek-R1")
+                if hasattr(model.model, "_repo_id"):
+                    repo_id = getattr(model.model, "_repo_id", "")
+                    if "/" in repo_id:
+                        org = repo_id.split("/")[0]
+                        # Organizations typically have multiple contributors
+                        if org and org not in ["google", "facebook", "microsoft"]:  # Known large orgs
+                            contributors = max(contributors, 3)
+                        elif org:
+                            contributors = max(contributors, 5)  # Large orgs have many contributors
+            except Exception:
+                pass
+        
+        # Minimum of 1 contributor
+        return max(1, contributors)
 
     def compute_score(
         self,
@@ -59,9 +97,19 @@ class BusFactor(Metric):
         freshest: Optional[str],
     ) -> Dict[str, float]:
         """Compute the base score, recency score, and final score."""
-        contributor_score = min(1.0, contributors / 10.0)
-        # Use contributor_score directly - dividing by n_code was causing scores to be too small
-        # n_code is not a reliable indicator and shouldn't penalize the bus factor
+        # Improved contributor scoring: more generous for models with multiple contributors
+        # Scale: 1 contributor = 0.3, 3 = 0.6, 5 = 0.8, 10+ = 1.0
+        if contributors >= 10:
+            contributor_score = 1.0
+        elif contributors >= 5:
+            contributor_score = 0.7 + 0.1 * (contributors - 5) / 5.0  # 0.7 to 0.8
+        elif contributors >= 3:
+            contributor_score = 0.5 + 0.2 * (contributors - 3) / 2.0  # 0.5 to 0.7
+        elif contributors >= 2:
+            contributor_score = 0.3 + 0.2 * (contributors - 1)  # 0.3 to 0.5
+        else:
+            contributor_score = 0.3  # Single contributor gets 0.3 (not 0.0)
+        
         base_score = contributor_score
 
         recency_score = 1.0
@@ -69,9 +117,15 @@ class BusFactor(Metric):
             try:
                 dt = datetime.fromisoformat(freshest.replace("Z", "+00:00"))
                 days_since = (datetime.now(timezone.utc) - dt).days
-                recency_score = math.exp(-math.log(2) * days_since / 365)
+                # More generous recency: half-life of 2 years instead of 1 year
+                recency_score = math.exp(-math.log(2) * days_since / 730)
+                # Minimum recency score of 0.2 for very old models
+                recency_score = max(0.2, recency_score)
             except Exception:
                 pass
+        else:
+            # If no date available, give moderate score instead of 0
+            recency_score = 0.5
 
         final_score = max(0.0, min(1.0, base_score * recency_score))
 

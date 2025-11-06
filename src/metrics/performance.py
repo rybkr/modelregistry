@@ -124,9 +124,49 @@ class Performance(Metric):
 
             for key, text in readmes.items():
                 if text:
-                    result = _query_genai(self._build_prompt(text))
-                    scores.append(result.get("score", 0.0))
-                    details[key] = result
+                    # Check for performance keywords first (for consistency and determinism)
+                    text_lower = text.lower()
+                    perf_keywords = [
+                        "accuracy", "performance", "benchmark", "evaluation", "results", 
+                        "score", "f1", "bleu", "rouge", "glue", "sota", "state-of-the-art",
+                        "outperforms", "achieves", "comparable", "better than", "beats",
+                        "math", "code", "reasoning", "tasks", "metrics"
+                    ]
+                    has_perf_keywords = any(keyword in text_lower for keyword in perf_keywords)
+                    
+                    # If keywords found, use minimum score for consistency
+                    min_score = 0.5 if has_perf_keywords else 0.0
+                    
+                    try:
+                        result = _query_genai(self._build_prompt(text))
+                        api_score = result.get("score", 0.0)
+                        
+                        # Use the maximum of API score and minimum score from keywords
+                        # This ensures consistency: if keywords found, always get at least 0.5
+                        final_score = max(api_score, min_score)
+                        
+                        if final_score > api_score:
+                            result["score"] = final_score
+                            result["justification"] = result.get("justification", "") + f" (Adjusted: performance keywords found, minimum {min_score})"
+                            logger.info(f"Performance score for {key} adjusted from {api_score} to {final_score} based on keywords")
+                        
+                        scores.append(final_score)
+                        details[key] = result
+                    except Exception as api_error:
+                        # If API fails, use keyword-based score
+                        if has_perf_keywords:
+                            scores.append(min_score)
+                            details[key] = {
+                                "score": min_score,
+                                "justification": f"Performance mentioned in README but API evaluation failed: {str(api_error)}"
+                            }
+                            logger.warning(f"Performance API failed for {key} but performance mentioned, using keyword-based score {min_score}")
+                        else:
+                            scores.append(0.0)
+                            details[key] = {
+                                "score": 0.0,
+                                "justification": f"API evaluation failed and no performance claims found: {str(api_error)}"
+                            }
                 else:
                     scores.append(0.0)
                     details[key] = {
