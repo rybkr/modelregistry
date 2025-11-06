@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS
 from datetime import datetime
 import uuid
@@ -11,7 +11,7 @@ from models import Model
 from resources.model_resource import ModelResource
 
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='templates', static_folder='static')
 CORS(app)
 
 DEFAULT_USERNAME = "ece30861defaultadminuser"
@@ -41,7 +41,32 @@ def health():
 
 
 @app.route("/", methods=["GET"])
-def root():
+def index():
+    """Serve the main package listing page or API info.
+
+    Returns:
+        HTML or JSON: Package listing page for browsers, API info for API requests
+    """
+    # Check if this is an API request
+    # Default to JSON for programmatic requests (no Accept header or Accept: */*)
+    # Only return HTML if explicitly requesting HTML
+    accept_header = request.headers.get("Accept", "")
+    wants_html = (
+        "text/html" in accept_header and
+        "application/json" not in accept_header and
+        accept_header != "*/*" and
+        accept_header != ""
+    )
+    
+    if wants_html:
+        return render_template("index.html")
+    else:
+        # Default to JSON for API requests and test clients
+        return jsonify({"message": "Model Registry API v1.0", "status": "running"}), 200
+
+
+@app.route("/api", methods=["GET"])
+def api_root():
     """Return basic API information.
 
     Provides version and status information for the Model Registry API.
@@ -159,23 +184,41 @@ def get_package(package_id):
     """Retrieve a specific package by ID.
 
     Fetches detailed information about a package using its unique identifier.
+    Returns JSON for API requests or HTML page for browser requests.
 
     Args:
         package_id (str): Unique package identifier (UUID)
 
     Returns:
-        tuple: JSON response and HTTP status code
-            Success (200): Package details as dictionary
+        tuple or HTML: JSON response and HTTP status code, or HTML page
+            Success (200): Package details as dictionary or HTML page
             Error (404): Package not found
             Error (500): Server error during retrieval
     """
-    try:
-        package = storage.get_package(package_id)
-        if not package:
-            return jsonify({"error": "Package not found"}), 404
-        return jsonify(package.to_dict()), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    # Check if this is an API request
+    # Default to JSON for programmatic requests (no Accept header or Accept: */*)
+    # Only return HTML if explicitly requesting HTML
+    accept_header = request.headers.get("Accept", "")
+    content_type = request.headers.get("Content-Type", "")
+    
+    # Return HTML only if explicitly requesting HTML
+    wants_html = (
+        "text/html" in accept_header and
+        "application/json" not in accept_header
+    )
+    
+    if wants_html:
+        # Return HTML page for browser requests
+        return render_template("package_detail.html", package_id=package_id)
+    else:
+        # Default to JSON for API requests
+        try:
+            package = storage.get_package(package_id)
+            if not package:
+                return jsonify({"error": "Package not found"}), 404
+            return jsonify(package.to_dict()), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
 
 
 @app.route("/packages/<package_id>", methods=["DELETE"])
@@ -353,6 +396,40 @@ def reset_registry():
         return jsonify({"message": "Registry reset successfully"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# Frontend page routes
+@app.route("/upload", methods=["GET"])
+def upload_package_page():
+    """Serve the upload package page.
+
+    Returns:
+        HTML: Upload package page
+    """
+    return render_template("upload.html")
+
+
+@app.route("/ingest", methods=["GET"])
+def ingest_page():
+    """Serve the ingest model page.
+
+    Returns:
+        HTML: Ingest model page
+    """
+    return render_template("ingest.html")
+
+
+@app.route("/health", methods=["GET"])
+def health_dashboard():
+    """Serve the health dashboard page or return JSON health data.
+
+    Returns:
+        HTML or JSON: Health dashboard page or health data
+    """
+    # Check if this is an API request (Accept: application/json)
+    if request.headers.get("Accept", "").startswith("application/json"):
+        return health()
+    return render_template("health.html")
 
 
 if __name__ == "__main__":

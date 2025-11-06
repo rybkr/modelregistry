@@ -6,6 +6,18 @@ from typing import Any, Dict, Optional
 from log import logger
 from metrics.base_metric import Metric
 from models import Model
+from resources.base_resource import _BaseResource
+
+
+def try_readme(resource: _BaseResource, filename: str = "README.md") -> Optional[str]:
+    """Attempt to fetch README.md via the resource's RepoView."""
+    try:
+        with resource.open_files(allow_patterns=[filename]) as repo:
+            if repo.exists(filename):
+                return repo.read_text(filename)
+    except Exception:
+        return None
+    return None
 
 
 class DatasetQuality(Metric):
@@ -76,6 +88,31 @@ class DatasetQuality(Metric):
         start = time.time()
         try:
             if model.dataset is None:
+                # Check if README mentions dataset - give partial credit
+                readme: Optional[str] = None
+                if model.model:
+                    readme = try_readme(model.model)
+                
+                if readme:
+                    readme_lower = readme.lower()
+                    dataset_keywords = [
+                        "dataset", "data", "training data", "corpus", "training set",
+                        "training dataset", "evaluation dataset", "test set", "validation set",
+                        "data collection", "data source", "benchmark", "benchmarks"
+                    ]
+                    has_dataset_mention = any(keyword in readme_lower for keyword in dataset_keywords)
+                    
+                    if has_dataset_mention:
+                        # Give partial credit for mentioning dataset in README
+                        self.value = 0.6
+                        self.latency_ms = int(round((time.time() - start) * 1000))
+                        self.details = {
+                            "partial_credit": True,
+                            "reason": "Dataset mentioned in README but no dataset URL provided"
+                        }
+                        logger.info("Dataset mentioned in README, giving partial credit 0.6")
+                        return
+                
                 self.value = 0.0
                 self.details = {"error": "No dataset provided"}
                 self.latency_ms = int(round((time.time() - start) * 1000))

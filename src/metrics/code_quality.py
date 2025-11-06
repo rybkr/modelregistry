@@ -2,14 +2,26 @@ from __future__ import annotations
 
 import subprocess
 import time
-from typing import Any
+from typing import Any, Optional
 
 from adapters.code_fetchers import open_codebase
 from adapters.repo_view import RepoView
 from log import logger
 from metrics.base_metric import Metric
 from models import Model
+from resources.base_resource import _BaseResource
 from resources.code_resource import CodeResource
+
+
+def try_readme(resource: _BaseResource, filename: str = "README.md") -> Optional[str]:
+    """Attempt to fetch README.md via the resource's RepoView."""
+    try:
+        with resource.open_files(allow_patterns=[filename]) as repo:
+            if repo.exists(filename):
+                return repo.read_text(filename)
+    except Exception:
+        return None
+    return None
 
 
 class CodeQuality(Metric):
@@ -73,6 +85,31 @@ class CodeQuality(Metric):
             # If your Model is a dict-like, .get() is valid.
             url: str | None = model.code.url if model.code else None
             if not url:
+                # Check if README mentions code - give partial credit
+                readme: Optional[str] = None
+                if model.model:
+                    readme = try_readme(model.model)
+                
+                if readme:
+                    readme_lower = readme.lower()
+                    code_keywords = [
+                        "code", "github", "repository", "repo", "open-source", "open source",
+                        "source code", "open-sourced", "open sourced", "available", "download",
+                        "checkpoint", "implementation", "example", "script", "notebook"
+                    ]
+                    has_code_mention = any(keyword in readme_lower for keyword in code_keywords)
+                    
+                    if has_code_mention:
+                        # Give partial credit for mentioning code in README
+                        self.value = 0.6
+                        self.latency_ms = int(round((time.perf_counter() - start) * 1000))
+                        self.details = {
+                            "partial_credit": True,
+                            "reason": "Code mentioned in README but no code URL provided"
+                        }
+                        logger.info("Code mentioned in README, giving partial credit 0.6")
+                        return None
+                
                 self.value = 0.0
                 self.latency_ms = int(round((time.perf_counter() - start) * 1000))
                 self.details = {"error": "No code URL provided"}

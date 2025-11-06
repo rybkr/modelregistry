@@ -19,8 +19,8 @@ MODEL_ALLOW = [
     "model_index.json",
     "tokenizer.*",
     "vocab.*",
-    "pytorch_model.bin",
-    "tf_model.h5",
+    # Note: We don't download model weight files (*.bin, *.safetensors, etc.)
+    # because they can be huge (hundreds of GB). Size metric uses API metadata instead.
 ]
 
 # NOTE: Move MAX_FILE_BYTES to .env

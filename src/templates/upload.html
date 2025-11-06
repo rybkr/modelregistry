@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Package{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <h1 class="h2 mb-4">Upload Package</h1>
+
+        <div class="card">
+            <div class="card-header">
+                <h2 class="h5 mb-0">Package Information</h2>
+            </div>
+            <div class="card-body">
+                <form id="upload-form" role="form" aria-label="Upload package form">
+                    <div class="mb-3">
+                        <label for="package-name" class="form-label">Package Name <span class="text-danger" aria-label="required">*</span></label>
+                        <input type="text" class="form-control" id="package-name" required 
+                               aria-required="true" aria-describedby="package-name-help">
+                        <div id="package-name-help" class="form-text">Enter a descriptive name for your package</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="package-version" class="form-label">Version <span class="text-danger" aria-label="required">*</span></label>
+                        <input type="text" class="form-control" id="package-version" required 
+                               aria-required="true" placeholder="e.g., 1.0.0" 
+                               aria-describedby="package-version-help">
+                        <div id="package-version-help" class="form-text">Use semantic versioning (e.g., 1.0.0, 2.1.3)</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="package-url" class="form-label">Model URL</label>
+                        <input type="url" class="form-control" id="package-url" 
+                               placeholder="https://huggingface.co/..." 
+                               aria-describedby="package-url-help">
+                        <div id="package-url-help" class="form-text">Optional: URL to the model source (HuggingFace, GitHub, etc.)</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="package-content" class="form-label">Package Content</label>
+                        <textarea class="form-control" id="package-content" rows="5" 
+                                  placeholder="Optional: Package content or description"
+                                  aria-describedby="package-content-help"></textarea>
+                        <div id="package-content-help" class="form-text">Optional: Additional content or description for the package</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="package-metadata" class="form-label">Metadata (JSON)</label>
+                        <textarea class="form-control font-monospace" id="package-metadata" rows="6" 
+                                  placeholder='{"key": "value"}' 
+                                  aria-describedby="package-metadata-help"></textarea>
+                        <div id="package-metadata-help" class="form-text">Optional: Additional metadata in JSON format</div>
+                    </div>
+
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{{ url_for('index') }}" class="btn btn-outline-secondary" role="button">Cancel</a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-upload me-1" aria-hidden="true"></i>Upload Package
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/upload.js') }}"></script>
+{% endblock %}
+
