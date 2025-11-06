@@ -7,6 +7,7 @@ import os
 from registry_models import Package
 from storage import storage
 from metrics_engine import compute_all_metrics
+from metrics.net_score import NetScore
 from models import Model
 from resources.model_resource import ModelResource
 
@@ -303,13 +304,16 @@ def ingest_model():
           'https://huggingface.co/')
 
     Quality Thresholds (minimum 0.5):
+        All non-latency metrics from the rate behavior (computed via compute_all_metrics):
         - license
         - ramp_up_time
         - bus_factor
-        - dataset_and_code
+        - dataset_and_code_score
         - dataset_quality
         - code_quality
-        - performance
+        - performance_claims
+        - size_score (each device score must be >= 0.5: raspberry_pi, jetson_nano, desktop_pc, aws_server)
+        - net_score (aggregate score computed from all metrics)
 
     Returns:
         tuple: JSON response and HTTP status code
@@ -335,24 +339,41 @@ def ingest_model():
         except Exception as e:
             return jsonify({"error": f"Failed to evaluate model: {str(e)}"}), 500
 
-        non_latency_metrics = [
-            "license",
-            "ramp_up_time",
-            "bus_factor",
-            "dataset_and_code",
-            "dataset_quality",
-            "code_quality",
-            "performance",
-        ]
+        # Compute net_score from all metrics
+        net_score = NetScore()
+        net_score.evaluate(list(results.values()))
+        results[net_score.name] = net_score
 
-        for metric_name in non_latency_metrics:
-            if metric_name in results:
-                metric = results[metric_name]
-                score = metric.value if isinstance(metric.value, (int, float)) else 0
-                if score < 0.5:
+        # Validate all non-latency metrics from the rate behavior
+        # These are all metrics returned by compute_all_metrics plus net_score
+        
+        for metric_name, metric in results.items():
+            
+            # Handle size_score which is a dict of device scores
+            if metric_name == "size_score":
+                if isinstance(metric.value, dict) and len(metric.value) > 0:
+                    # Check that each individual device score is >= 0.5
+                    for device, score in metric.value.items():
+                        if score < 0.5:
+                            return jsonify(
+                                {"error": f"Failed threshold: {metric_name}.{device} {score:.3f} < 0.5"}
+                            ), 400
+                else:
+                    # Invalid size_score, fail
                     return jsonify(
-                        {"error": f"Failed threshold: {metric_name} {score} < 0.5"}
+                        {"error": f"Failed threshold: {metric_name} is invalid or empty"}
                     ), 400
+            # Handle numeric metrics
+            elif isinstance(metric.value, (int, float)):
+                if metric.value < 0.5:
+                    return jsonify(
+                        {"error": f"Failed threshold: {metric_name} {metric.value:.3f} < 0.5"}
+                    ), 400
+            else:
+                # Unknown metric type, fail for safety
+                return jsonify(
+                    {"error": f"Failed threshold: {metric_name} has invalid type"}
+                ), 400
 
         parts = url.rstrip("/").split("/")
         model_name = parts[-1] if parts else "unknown"
