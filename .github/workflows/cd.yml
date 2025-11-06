@@ -1,0 +1,99 @@
+name: CD - Deploy to AWS Elastic Beanstalk
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to AWS
+    runs-on: ubuntu-latest
+    # Only deploy if CI passes
+    needs: []  # Add 'test' here once CI job exists, like: needs: [test]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install awsebcli
+          pip install -e ".[dev]"
+
+      - name: Initialize Elastic Beanstalk
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+        run: |
+          # Create .elasticbeanstalk directory
+          mkdir -p .elasticbeanstalk
+          
+          # Check if already initialized
+          if [ -f ".elasticbeanstalk/config.yml" ]; then
+            echo "Elastic Beanstalk already initialized"
+          else
+            echo "Initializing Elastic Beanstalk..."
+            # Create config.yml using Python one-liner to avoid YAML parsing issues
+            python3 -c "import os; r=os.environ.get('AWS_REGION','us-east-1'); os.makedirs('.elasticbeanstalk', exist_ok=True); open('.elasticbeanstalk/config.yml','w').write(f'branch-defaults:\n  default:\n    environment: model-registry-production\n    group_suffix: null\nglobal:\n  application_name: model-registry\n  branch: null\n  default_ec2_keyname: null\n  default_platform: Python 3.11\n  default_region: {r}\n  include_git_submodules: true\n  instance_profile: null\n  platform_name: null\n  platform_version: null\n  profile: null\n  repository: null\n  sc: git\n  workspace_type: Application\n')"
+            
+            # Create optionsettings file if needed
+            mkdir -p .elasticbeanstalk/saved_configs
+            
+            echo "Elastic Beanstalk configuration created"
+          fi
+          
+          # Verify EB CLI can see the application
+          eb list 2>&1 || echo "Application not yet created (will be created on first deploy)"
+
+      - name: Create or Deploy to Elastic Beanstalk
+        run: |
+          # Check if environment exists using AWS CLI (more reliable than eb list)
+          ENV_EXISTS=$(aws elasticbeanstalk describe-environments \
+            --application-name model-registry \
+            --environment-names model-registry-production \
+            --region ${{ secrets.AWS_REGION || 'us-east-1' }} \
+            --query 'Environments[0].Status' \
+            --output text 2>/dev/null || echo "None")
+          
+          if [ "$ENV_EXISTS" != "None" ] && [ "$ENV_EXISTS" != "" ]; then
+            echo "Environment exists (Status: $ENV_EXISTS), deploying..."
+            eb deploy model-registry-production --timeout 30
+          else
+            echo "Environment does not exist, creating..."
+            # Create environment with minimal configuration
+            # EB will create default roles if they don't exist
+            eb create model-registry-production \
+              --timeout 30 \
+              --instance_type t3.micro \
+              --single
+          fi
+
+      - name: Get deployment URL
+        run: |
+          eb status model-registry-production
+          eb list
+
+      - name: Health check
+        run: |
+          URL=$(eb status model-registry-production | grep "CNAME" | awk '{print $2}')
+          echo "Deployed to: http://$URL"
+          echo "Waiting for deployment to be ready..."
+          sleep 60  # Wait for deployment to stabilize
+          curl -f http://$URL/health || exit 1
+
