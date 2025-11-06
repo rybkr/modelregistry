@@ -115,12 +115,17 @@ class License(Metric):
                     logger.info(f"License keywords found: {found_keywords[:5]}")  # Log first 5
                 
                 # If keywords found, use minimum score for consistency
-                # This makes the metric deterministic regardless of API variability
+                # Check for specific high-quality licenses (MIT, Apache) for higher scores
                 if has_license_keywords:
-                    min_score = 0.5
-                    # Set value early to ensure it's never 0.0 if keywords found
-                    self.value = 0.5
-                    logger.info("License keywords found in README, setting minimum score to 0.5 (value pre-set to 0.5)")
+                    # Check for high-quality licenses
+                    if "mit" in readme_lower or "apache" in readme_lower or "apache-2.0" in readme_lower:
+                        min_score = 0.75  # MIT and Apache are excellent licenses
+                        self.value = 0.75
+                        logger.info("High-quality license (MIT/Apache) found, setting minimum score to 0.75")
+                    else:
+                        min_score = 0.6  # Other licenses still get good score
+                        self.value = 0.6
+                        logger.info("License keywords found in README, setting minimum score to 0.6")
                 else:
                     min_score = 0.0
                     logger.debug("No license keywords found in README")
@@ -142,9 +147,9 @@ class License(Metric):
                     final_score = max(api_score, min_score)
                     
                     # Ensure final_score is never less than min_score (defensive check)
-                    if has_license_keywords and final_score < 0.5:
-                        logger.warning(f"License final_score {final_score} is less than min_score 0.5, forcing to 0.5")
-                        final_score = 0.5
+                    if has_license_keywords and final_score < min_score:
+                        logger.warning(f"License final_score {final_score} is less than min_score {min_score}, forcing to {min_score}")
+                        final_score = min_score
                     
                     if final_score > api_score:
                         result["score"] = final_score
