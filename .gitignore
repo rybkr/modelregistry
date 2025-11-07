@@ -73,3 +73,5 @@ safety-report.json
 
 # Procfile (using WSGIPath instead)
 Procfile
+.hypothesis/
+.hypothesis/
