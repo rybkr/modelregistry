@@ -304,7 +304,7 @@ def ingest_model():
           'https://huggingface.co/')
 
     Quality Thresholds (minimum 0.5):
-        All non-latency metrics from the rate behavior (computed via compute_all_metrics):
+        All non-latency metrics computed via compute_all_metrics:
         - license
         - ramp_up_time
         - bus_factor
