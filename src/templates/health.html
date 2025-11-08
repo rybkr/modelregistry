@@ -61,6 +61,69 @@
             </div>
         </div>
 
+        <!-- Activity & Logs -->
+        <div class="row mb-4">
+            <div class="col-lg-6 mb-4 mb-lg-0">
+                <div class="card h-100">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h2 class="h5 mb-0">Activity (Last Hour)</h2>
+                        <div class="d-flex align-items-center gap-3">
+                            <span class="text-muted small" id="activity-window-label">Loading...</span>
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="refresh-activity" aria-label="Refresh activity data">
+                                <i class="bi bi-clock-history me-1" aria-hidden="true"></i>Refresh
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row" id="activity-summary">
+                            <div class="col-12 text-center text-muted py-3">Loading activity data...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="card h-100">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h2 class="h5 mb-0">Recent Logs</h2>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="refresh-logs" aria-label="Refresh system logs">
+                            <i class="bi bi-arrow-clockwise me-1" aria-hidden="true"></i>Refresh
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="logs-body" class="small text-monospace" style="max-height: 320px; overflow-y: auto;">
+                            <p class="text-muted text-center mb-0">Loading logs...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Activity Timeline -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h2 class="h5 mb-0">Recent Activity Timeline</h2>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col">Timestamp</th>
+                                <th scope="col">Event</th>
+                                <th scope="col">Package</th>
+                                <th scope="col">Message</th>
+                            </tr>
+                        </thead>
+                        <tbody id="activity-events-body">
+                            <tr>
+                                <td colspan="4" class="text-muted text-center py-4">Loading activity timeline...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         <!-- System Actions -->
         <div class="card">
             <div class="card-header">

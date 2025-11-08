@@ -6,25 +6,44 @@
  * Initialize the page
  */
 document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('refresh-health').addEventListener('click', loadHealthData);
+    document.getElementById('refresh-health').addEventListener('click', () => loadHealthData(true));
     document.getElementById('reset-registry').addEventListener('click', handleReset);
 
-    // Load health data
-    loadHealthData();
+    const refreshActivityBtn = document.getElementById('refresh-activity');
+    if (refreshActivityBtn) {
+        refreshActivityBtn.addEventListener('click', () => loadActivityData(true));
+    }
 
-    // Auto-refresh every 30 seconds
-    setInterval(loadHealthData, 30000);
+    const refreshLogsBtn = document.getElementById('refresh-logs');
+    if (refreshLogsBtn) {
+        refreshLogsBtn.addEventListener('click', () => loadLogData(true));
+    }
+
+    // Initial load
+    loadHealthData(true);
+    loadActivityData(true);
+    loadLogData(true);
+
+    // Auto-refresh cadence
+    setInterval(() => loadHealthData(false), 30000);
+    setInterval(() => {
+        loadActivityData(false);
+        loadLogData(false);
+    }, 60000);
 });
 
 /**
  * Load health data from API
  */
-async function loadHealthData() {
+async function loadHealthData(showSpinner = false) {
     const refreshBtn = document.getElementById('refresh-health');
-    const originalText = refreshBtn.innerHTML;
-    
-    refreshBtn.disabled = true;
-    refreshBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Refreshing...';
+    let originalText = '';
+
+    if (showSpinner) {
+        originalText = refreshBtn.innerHTML;
+        refreshBtn.disabled = true;
+        refreshBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Refreshing...';
+    }
 
     try {
         const health = await apiClient.getHealth();
@@ -66,8 +85,137 @@ async function loadHealthData() {
     } catch (error) {
         showAlert(`Failed to load health data: ${error.message}`, 'danger');
     } finally {
-        refreshBtn.disabled = false;
-        refreshBtn.innerHTML = originalText;
+        if (showSpinner) {
+            refreshBtn.disabled = false;
+            refreshBtn.innerHTML = originalText;
+        }
+    }
+}
+
+/**
+ * Load activity summary and timeline
+ */
+async function loadActivityData(showSpinner = false) {
+    const refreshBtn = document.getElementById('refresh-activity');
+    const summaryContainer = document.getElementById('activity-summary');
+    const eventsBody = document.getElementById('activity-events-body');
+    const windowLabel = document.getElementById('activity-window-label');
+
+    if (!summaryContainer || !eventsBody) {
+        return;
+    }
+
+    let originalText = '';
+    if (showSpinner && refreshBtn) {
+        originalText = refreshBtn.innerHTML;
+        refreshBtn.disabled = true;
+        refreshBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Refreshing...';
+    }
+
+    try {
+        const activity = await apiClient.getHealthActivity({ window: 60, limit: 25 });
+
+        windowLabel.textContent = `Window: ${formatDate(activity.window_start)} – ${formatDate(activity.window_end)}`;
+
+        const counts = activity.counts || {};
+        const summaryHtml = Object.entries(counts)
+            .map(([key, value]) => {
+                const label = key === 'other' ? 'Other' : key.replace(/_/g, ' ');
+                return `
+                    <div class="col-md-6 col-lg-4 mb-3">
+                        <div class="border rounded p-3 bg-light h-100">
+                            <p class="text-muted mb-1 text-uppercase small">${label}</p>
+                            <p class="h4 mb-0">${value}</p>
+                        </div>
+                    </div>
+                `;
+            })
+            .join('');
+        summaryContainer.innerHTML = summaryHtml || '<p class="text-muted mb-0">No activity recorded in the last hour.</p>';
+
+        const events = activity.events || [];
+        if (events.length === 0) {
+            eventsBody.innerHTML = `
+                <tr>
+                    <td colspan="4" class="text-muted text-center">No recent activity to display.</td>
+                </tr>
+            `;
+        } else {
+            eventsBody.innerHTML = events
+                .map((event) => {
+                    const packageLabel = event.package
+                        ? `${event.package.name || 'unknown'} (${event.package.version || 'n/a'})`
+                        : '—';
+                    return `
+                        <tr>
+                            <td class="text-nowrap">${formatDate(event.timestamp)}</td>
+                            <td><span class="badge bg-secondary text-uppercase">${event.type.replace(/_/g, ' ')}</span></td>
+                            <td>${packageLabel}</td>
+                            <td>${event.message}</td>
+                        </tr>
+                    `;
+                })
+                .join('');
+        }
+    } catch (error) {
+        showAlert(`Failed to load activity data: ${error.message}`, 'danger');
+    } finally {
+        if (showSpinner && refreshBtn) {
+            refreshBtn.disabled = false;
+            refreshBtn.innerHTML = originalText;
+        }
+    }
+}
+
+/**
+ * Load recent log entries
+ */
+async function loadLogData(showSpinner = false) {
+    const refreshBtn = document.getElementById('refresh-logs');
+    const logsContainer = document.getElementById('logs-body');
+
+    if (!logsContainer) {
+        return;
+    }
+
+    let originalText = '';
+    if (showSpinner && refreshBtn) {
+        originalText = refreshBtn.innerHTML;
+        refreshBtn.disabled = true;
+        refreshBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Refreshing...';
+    }
+
+    try {
+        const { entries } = await apiClient.getHealthLogs({ limit: 100 });
+
+        if (!entries || entries.length === 0) {
+            logsContainer.innerHTML = '<p class="text-muted mb-0">No log entries available.</p>';
+        } else {
+            logsContainer.innerHTML = entries
+                .map((entry) => {
+                    const levelBadgeClass = entry.level === 'ERROR' ? 'bg-danger' :
+                        entry.level === 'WARNING' ? 'bg-warning text-dark' : 'bg-secondary';
+                    return `
+                        <div class="log-entry border-bottom py-2">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="text-muted small">${formatDate(entry.timestamp)}</span>
+                                <span class="badge ${levelBadgeClass}">${entry.level}</span>
+                            </div>
+                            <div class="mt-1">
+                                <code class="text-wrap">${entry.message}</code>
+                            </div>
+                        </div>
+                    `;
+                })
+                .join('');
+        }
+    } catch (error) {
+        showAlert(`Failed to load system logs: ${error.message}`, 'danger');
+    } finally {
+        if (showSpinner && refreshBtn) {
+            refreshBtn.disabled = false;
+            refreshBtn.innerHTML = originalText;
+        }
     }
 }
 
@@ -95,7 +243,9 @@ async function handleReset() {
         
         // Reload health data and redirect to home
         setTimeout(() => {
-            loadHealthData();
+            loadHealthData(true);
+            loadActivityData(true);
+            loadLogData(true);
             window.location.href = '/';
         }, 1500);
     } catch (error) {

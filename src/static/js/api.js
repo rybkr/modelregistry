@@ -51,6 +51,34 @@ class ApiClient {
     }
 
     /**
+     * Get activity summary for the health dashboard
+     * @param {object} params - Query parameters (window, limit)
+     * @returns {Promise<object>}
+     */
+    async getHealthActivity(params = {}) {
+        const queryParams = new URLSearchParams();
+        if (params.window !== undefined) queryParams.append('window', params.window);
+        if (params.limit !== undefined) queryParams.append('limit', params.limit);
+        const queryString = queryParams.toString();
+        const endpoint = `/health/activity${queryString ? `?${queryString}` : ''}`;
+        return this.request(endpoint);
+    }
+
+    /**
+     * Get recent log entries for the health dashboard
+     * @param {object} params - Query parameters (limit, level)
+     * @returns {Promise<object>}
+     */
+    async getHealthLogs(params = {}) {
+        const queryParams = new URLSearchParams();
+        if (params.limit !== undefined) queryParams.append('limit', params.limit);
+        if (params.level) queryParams.append('level', params.level);
+        const queryString = queryParams.toString();
+        const endpoint = `/health/logs${queryString ? `?${queryString}` : ''}`;
+        return this.request(endpoint);
+    }
+
+    /**
      * List packages with optional search and pagination
      * @param {object} params - Query parameters
      * @returns {Promise<object>}

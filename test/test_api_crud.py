@@ -1,22 +1,3 @@
-import pytest
-import sys
-import os
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
-from api_server import app
-from storage import storage
-
-
-@pytest.fixture
-def client():
-    app.config["TESTING"] = True
-    with app.test_client() as client:
-        storage.reset()  # Reset before each test
-        yield client
-        storage.reset()  # Reset after each test
-
-
 def test_health_endpoint(client):
     response = client.get("/health")
     assert response.status_code == 200
@@ -95,3 +76,9 @@ def test_reset_registry(client):
     list_response = client.get("/packages")
     data = list_response.get_json()
     assert data["total"] == 0
+
+
+def test_health_dashboard_page(client):
+    response = client.get("/health/dashboard")
+    assert response.status_code == 200
+    assert b"System Health Dashboard" in response.data
