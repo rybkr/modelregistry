@@ -28,6 +28,8 @@ dev = [
     "pytest-cov",
     "pre-commit",
     "ruff",
+    "selenium",
+    "webdriver-manager",
 ]
 
 [tool.black]
