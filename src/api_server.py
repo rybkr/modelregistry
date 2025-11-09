@@ -13,8 +13,8 @@ from resources.model_resource import ModelResource
 
 # Get the directory where this file is located (src directory)
 SRC_DIR = os.path.dirname(os.path.abspath(__file__))
-TEMPLATE_DIR = os.path.join(SRC_DIR, 'templates')
-STATIC_DIR = os.path.join(SRC_DIR, 'static')
+TEMPLATE_DIR = os.path.join(SRC_DIR, "templates")
+STATIC_DIR = os.path.join(SRC_DIR, "static")
 
 app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
 CORS(app)
@@ -57,12 +57,12 @@ def index():
     # Only return HTML if explicitly requesting HTML
     accept_header = request.headers.get("Accept", "")
     wants_html = (
-        "text/html" in accept_header and
-        "application/json" not in accept_header and
-        accept_header != "*/*" and
-        accept_header != ""
+        "text/html" in accept_header
+        and "application/json" not in accept_header
+        and accept_header != "*/*"
+        and accept_header != ""
     )
-    
+
     if wants_html:
         return render_template("index.html")
     else:
@@ -149,6 +149,7 @@ def list_packages():
         - limit (int, optional): Maximum number of results (default: 100)
         - query (str, optional): Search query string
         - regex (bool, optional): Enable regex search mode (default: false)
+        - version (str, optional): A version string filter.
 
     Returns:
         tuple: JSON response and HTTP status code
@@ -164,12 +165,16 @@ def list_packages():
         limit = int(request.args.get("limit", 100))
         query = request.args.get("query", "")
         regex = request.args.get("regex", "false").lower() == "true"
+        version = request.args.get("version", "")
 
         if query:
             packages = storage.search_packages(query, use_regex=regex)
             packages = packages[offset : offset + limit]
         else:
             packages = storage.list_packages(offset=offset, limit=limit)
+
+        if version:
+            packages = filter(lambda package: package.check_version(version), packages)
 
         return jsonify(
             {
@@ -205,13 +210,12 @@ def get_package(package_id):
     # Only return HTML if explicitly requesting HTML
     accept_header = request.headers.get("Accept", "")
     content_type = request.headers.get("Content-Type", "")
-    
+
     # Return HTML only if explicitly requesting HTML
     wants_html = (
-        "text/html" in accept_header and
-        "application/json" not in accept_header
+        "text/html" in accept_header and "application/json" not in accept_header
     )
-    
+
     if wants_html:
         # Return HTML page for browser requests
         return render_template("package_detail.html", package_id=package_id)
