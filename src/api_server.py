@@ -172,6 +172,9 @@ def list_packages():
         else:
             packages = storage.list_packages(offset=offset, limit=limit)
 
+        if version:
+            packages = filter(lambda package: package.check_version(version), packages)
+
         return jsonify(
             {
                 "packages": [p.to_dict() for p in packages],
