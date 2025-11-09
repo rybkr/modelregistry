@@ -58,17 +58,121 @@ class Package:
         # ~x.y - Equivalent to above
         # ~x - Allows minor-level changes
         # ^x.y.z - Allow changes that don't modify the left-most non-zero element in the [major, minor, patch] tuple
+
+        singleVersion = re.compile(r"(\d+)(?:\.(\d+)(?:\.(\d+))?)?")
+        versionRange = re.compile(
+            r"(\d+)(?:\.(\d+)(?:\.(\d+))?)?( )*\-( )*(\d+)(?:\.(\d+)(?:\.(\d+))?)?"
+        )
+        # Parse package version
+        packageMatches = singleVersion.match(self.version)
+        if packageMatches is None:
+            return False
+        if packageMatches.lastindex is None or packageMatches.lastindex > 3:
+            return False  # Malformed version
+        packageMajor = int(packageMatches.group(1))
+        packageMinor = (
+            int(packageMatches.group(2)) if packageMatches.lastindex >= 2 else -1
+        )
+        packagePatch = (
+            int(packageMatches.group(3)) if packageMatches.lastindex == 3 else -1
+        )
         if version[0] == "v":
             version = version[1:]  # Strip the 'v' at the beginning
 
+        tildeFound: bool = False
+        caretFound: bool = False
         if version[0] == "~":
             version = version[1:]  # Strip the tilde out so we can handle the rest
-            p = re.compile(r"(\d+)(?:\.(\d+)(?:\.(\d+))?)?")
-            matches = p.match(version)
-            if matches is None:
+            tildeFound = True
+        if version[0] == "^":
+            version = version[1:]
+            caretFound = True
+        if caretFound or tildeFound:
+            testMatches = singleVersion.match(version)
+            if testMatches is None:
                 return False
-            if matches.lastindex is None or matches.lastindex > 3:
+            if testMatches.lastindex is None or testMatches.lastindex > 3:
                 return False  # Malformed version
-            major = int(matches.group(1))
-            minor = int(matches.group(2)) if matches.lastindex >= 2 else -1
-            patch = int(matches.group(3)) if matches.lastindex == 3 else -1
+            testMajor = int(testMatches.group(1))
+            testMinor = int(testMatches.group(2)) if testMatches.lastindex >= 2 else -1
+            testPatch = int(testMatches.group(3)) if testMatches.lastindex == 3 else -1
+
+            if tildeFound:
+                if testMinor == -1:
+                    # Minor number can change
+                    return testMajor == packageMajor
+                else:
+                    return testMajor == packageMajor and testMinor == packageMinor
+            elif caretFound:
+                if testMajor == 0:
+                    if testMinor <= 0:
+                        return testPatch == -1 or testPatch == packagePatch
+                    else:
+                        return testMinor == packageMinor
+                else:
+                    return testMajor == packageMajor
+        else:
+            # Check if we are given a version range
+            testMatches = versionRange.match(version)
+            if testMatches is None:
+                # Must be just 1 version
+                testMatches = singleVersion.match(version)
+                if testMatches is None:
+                    return False
+                if testMatches.lastindex is None or testMatches.lastindex > 3:
+                    return False  # Malformed version
+                testMajor = int(testMatches.group(1))
+                testMinor = (
+                    int(testMatches.group(2)) if testMatches.lastindex >= 2 else -1
+                )
+                testPatch = (
+                    int(testMatches.group(3)) if testMatches.lastindex == 3 else -1
+                )
+                if testMinor == -1:
+                    return testMajor == packageMajor
+                elif testPatch == -1:
+                    return testMajor == packageMajor and testMinor == packageMinor
+                else:
+                    return (
+                        testMajor == packageMajor
+                        and testMinor == packageMinor
+                        and testPatch == packagePatch
+                    )
+            else:
+                if testMatches.lastindex is None or testMatches.lastindex > 3:
+                    return False  # Malformed version
+                lowerTestMajor = int(testMatches.group(1))
+                lowerTestMinor = (
+                    int(testMatches.group(2)) if testMatches.lastindex >= 2 else -1
+                )
+                lowerTestPatch = (
+                    int(testMatches.group(3)) if testMatches.lastindex == 3 else -1
+                )
+
+                upperTestMajor = int(testMatches.group(4))
+                upperTestMinor = (
+                    int(testMatches.group(5)) if testMatches.lastindex >= 2 else -1
+                )
+                upperTestPatch = (
+                    int(testMatches.group(6)) if testMatches.lastindex == 3 else -1
+                )
+
+                if lowerTestMajor < packageMajor and packageMajor < upperTestMajor:
+                    return True
+                elif lowerTestMajor == packageMajor or packageMajor == upperTestMajor:
+                    if lowerTestMinor < packageMinor and packageMinor < upperTestMinor:
+                        return True
+                    elif (
+                        lowerTestMinor == packageMinor or packageMinor == upperTestMinor
+                    ):
+                        if (
+                            lowerTestPatch <= packagePatch
+                            and packagePatch >= upperTestPatch
+                        ):
+                            return True
+                        else:
+                            return False
+                    else:
+                        return False
+                else:
+                    return False
