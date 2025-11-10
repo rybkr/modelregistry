@@ -129,6 +129,16 @@ def upload_package():
 
         storage.create_package(package)
 
+        storage.record_event(
+            "package_uploaded",
+            package=package,
+            actor="api",
+            details={
+                "source": "direct_upload",
+                "content_length": len(data.get("content", "")),
+            },
+        )
+
         return jsonify(
             {"message": "Package uploaded successfully", "package": package.to_dict()}
         ), 201
@@ -246,9 +256,16 @@ def delete_package(package_id):
             Error (500): Server error during deletion
     """
     try:
-        success = storage.delete_package(package_id)
-        if not success:
+        deleted_package = storage.delete_package(package_id)
+        if deleted_package is None:
             return jsonify({"error": "Package not found"}), 404
+
+        storage.record_event(
+            "package_deleted",
+            package=deleted_package,
+            actor="api",
+            details={"source": "api"},
+        )
         return jsonify({"message": "Package deleted successfully"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -289,6 +306,13 @@ def rate_package(package_id):
         scores = {}
         for name, metric in results.items():
             scores[name] = {"score": metric.value, "latency_ms": metric.latency_ms}
+
+        storage.record_event(
+            "metrics_evaluated",
+            package=package,
+            actor="api",
+            details={"metrics": list(scores.keys())},
+        )
 
         return jsonify(scores), 200
     except Exception as e:
@@ -400,6 +424,13 @@ def ingest_model():
 
         storage.create_package(package)
 
+        storage.record_event(
+            "model_ingested",
+            package=package,
+            actor="api",
+            details={"source": "huggingface", "url": url},
+        )
+
         return jsonify(
             {"message": "Model ingested successfully", "package": package.to_dict()}
         ), 201
@@ -422,9 +453,48 @@ def reset_registry():
     """
     try:
         storage.reset()
+        storage.record_event(
+            "registry_reset",
+            actor="api",
+            details={"initiator": "dashboard"},
+        )
         return jsonify({"message": "Registry reset successfully"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/health/activity", methods=["GET"])
+def health_activity():
+    """Return operational activity metrics for the requested window."""
+    try:
+        window_minutes = int(request.args.get("window", 60))
+        limit = int(request.args.get("limit", 50))
+    except ValueError:
+        return jsonify({"error": "Invalid window or limit parameter"}), 400
+
+    window_minutes = max(1, min(window_minutes, 24 * 60))
+    limit = max(1, min(limit, 200))
+
+    summary = storage.get_activity_summary(
+        window_minutes=window_minutes,
+        event_limit=limit,
+    )
+    return jsonify(summary), 200
+
+
+@app.route("/health/logs", methods=["GET"])
+def health_logs():
+    """Return recent operational log entries."""
+    try:
+        limit = int(request.args.get("limit", 100))
+    except ValueError:
+        return jsonify({"error": "Invalid limit parameter"}), 400
+
+    limit = max(1, min(limit, 500))
+    level = request.args.get("level")
+
+    entries = storage.get_recent_logs(limit=limit, level=level)
+    return jsonify({"entries": entries}), 200
 
 
 # Frontend page routes
@@ -448,16 +518,19 @@ def ingest_page():
     return render_template("ingest.html")
 
 
-@app.route("/health", methods=["GET"])
-def health_dashboard():
+@app.route("/dashboard/health", methods=["GET"])
+def health_dashboard_redirect():
+    """Backward-compatible alias for the health dashboard route."""
+    return render_template("health.html")
+
+
+@app.route("/health/dashboard", methods=["GET"])
+def health_dashboard_legacy():
     """Serve the health dashboard page or return JSON health data.
 
     Returns:
         HTML or JSON: Health dashboard page or health data
     """
-    # Check if this is an API request (Accept: application/json)
-    if request.headers.get("Accept", "").startswith("application/json"):
-        return health()
     return render_template("health.html")
 
 

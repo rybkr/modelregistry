@@ -1,6 +1,30 @@
 """Pytest configuration and shared fixtures."""
 
+import os
+import sys
+
 import pytest
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
+SRC_PATH = os.path.join(PROJECT_ROOT, "src")
+if SRC_PATH not in sys.path:
+    sys.path.insert(0, SRC_PATH)
+
+from api_server import app  # noqa: E402  (import after path adjustment)
+from storage import storage  # noqa: E402
+
+
+@pytest.fixture
+def client():
+    app.config["TESTING"] = True
+    with app.test_client() as client:
+        storage.reset()
+        storage._activity_log.clear()  # type: ignore[attr-defined]
+        storage._log_entries.clear()  # type: ignore[attr-defined]
+        yield client
+        storage.reset()
+        storage._activity_log.clear()  # type: ignore[attr-defined]
+        storage._log_entries.clear()  # type: ignore[attr-defined]
 
 
 @pytest.fixture
