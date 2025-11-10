@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Literal, Optional, Type
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-from metrics.code_quality import CodeQuality
+from metrics.code_quality import CodeQuality, try_readme
 from models import Model
 from resources.code_resource import CodeResource
 from resources.model_resource import ModelResource
@@ -93,3 +94,90 @@ class TestCodeQuality:
         assert metric.details["flake8"] == 0.8
         assert metric.details["mypy"] == 0.6
         assert metric.details["stars"] == 0.5  # 24 stars → normalized to 0.5
+
+    def test_try_readme_returns_contents(self) -> None:
+        """Ensure try_readme fetches README contents when available."""
+        repo = MagicMock()
+        repo.exists.return_value = True
+        repo.read_text.return_value = "# README\ncontents"
+
+        @contextmanager
+        def fake_open_files(allow_patterns=None):
+            assert allow_patterns == ["README.md"]
+            yield repo
+
+        class DummyResource:
+            def open_files(self, allow_patterns=None):
+                return fake_open_files(allow_patterns)
+
+        result = try_readme(DummyResource())
+
+        repo.exists.assert_called_once_with("README.md")
+        repo.read_text.assert_called_once_with("README.md")
+        assert result == "# README\ncontents"
+
+    def test_try_readme_handles_exceptions(self) -> None:
+        """Return None when resource.open_files raises an exception."""
+
+        class FailingResource:
+            def open_files(self, allow_patterns=None):
+                raise RuntimeError("boom")
+
+        assert try_readme(FailingResource()) is None
+
+    def test_compute_partial_credit_when_readme_mentions_code(self, monkeypatch: Any) -> None:
+        """Assign partial credit if README references code but no URL is provided."""
+        metric = CodeQuality()
+        fake_model = Model(
+            model=ModelResource("https://huggingface.co/org/model"),
+            code=None,
+        )
+
+        monkeypatch.setattr(
+            "metrics.code_quality.try_readme",
+            lambda resource: "The code is available on GitHub at repo link.",
+        )
+
+        metric.compute(fake_model)
+
+        assert metric.value == 0.6
+        assert metric.details == {
+            "partial_credit": True,
+            "reason": "Code mentioned in README but no code URL provided",
+        }
+
+    def test_compute_returns_zero_without_code_or_readme(self, monkeypatch: Any) -> None:
+        """Return zero score when no code URL or README mention is found."""
+        metric = CodeQuality()
+        fake_model = Model(
+            model=ModelResource("https://huggingface.co/org/model"),
+            code=None,
+        )
+
+        monkeypatch.setattr("metrics.code_quality.try_readme", lambda resource: None)
+
+        metric.compute(fake_model)
+
+        assert metric.value == 0.0
+        assert metric.details == {"error": "No code URL provided"}
+
+    def test_compute_handles_exceptions_during_analysis(self, monkeypatch: Any) -> None:
+        """Gracefully handle exceptions thrown while opening the codebase."""
+        metric = CodeQuality()
+        fake_model = Model(
+            code=CodeResource("https://github.com/org/repo"),
+            model=ModelResource("https://huggingface.co/org/model"),
+        )
+
+        @contextmanager
+        def failing_open_codebase(url: str):
+            raise RuntimeError("boom")
+            yield  # pragma: no cover
+
+        monkeypatch.setattr("metrics.code_quality.open_codebase", failing_open_codebase)
+
+        metric.compute(fake_model)
+
+        assert metric.value == 0.0
+        assert metric.details == {"error": "boom"}
+
