@@ -6,6 +6,7 @@ let currentOffset = 0;
 let currentLimit = 25;
 let currentQuery = '';
 let currentRegex = false;
+let currentVersion = '';
 
 /**
  * Initialize the page
@@ -16,6 +17,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const urlLimit = getUrlParameter('limit');
     const urlQuery = getUrlParameter('query');
     const urlRegex = getUrlParameter('regex');
+    const urlVersion = getUrlParameter('version');
 
     if (urlOffset) currentOffset = parseInt(urlOffset, 10);
     if (urlLimit) {
@@ -25,6 +27,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (urlQuery) {
         currentQuery = urlQuery;
         document.getElementById('search-query').value = urlQuery;
+    }
+    if (urlVersion) {
+        currentVersion = urlVersion;
+        document.getElementById('search-version').value = urlVersion;
     }
     if (urlRegex === 'true') {
         currentRegex = true;
@@ -46,12 +52,14 @@ async function handleSearch(event) {
     event.preventDefault();
     currentQuery = document.getElementById('search-query').value.trim();
     currentRegex = document.getElementById('use-regex').checked;
+    currentVersion = document.getElementById('search-version').value.trim();
     currentOffset = 0;
     currentLimit = parseInt(document.getElementById('search-limit').value, 10);
 
     // Update URL
     setUrlParameter('offset', currentOffset);
     setUrlParameter('limit', currentLimit);
+    setUrlParameter('version', currentVersion);
     if (currentQuery) {
         setUrlParameter('query', currentQuery);
     } else {
@@ -101,6 +109,7 @@ async function loadPackages() {
             limit: currentLimit,
             query: currentQuery,
             regex: currentRegex,
+            version: currentVersion
         });
 
         loadingIndicator.style.display = 'none';

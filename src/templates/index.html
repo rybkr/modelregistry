@@ -23,11 +23,17 @@
                 <form id="search-form" class="row g-3" role="search" aria-label="Search packages">
                     <div class="col-md-8">
                         <label for="search-query" class="form-label">Search Packages</label>
-                        <input type="text" class="form-control" id="search-query" 
-                               placeholder="Enter model name or search term..." 
+                        <input type="text" class="form-control" id="search-query"
+                               placeholder="Enter model name or search term..."
                                aria-label="Search query">
                     </div>
-                    <div class="col-md-2">
+                    <div class="col-md-1">
+                        <label for="search-version" class="form-label">Version</label>
+                        <input type="text" class="form-control" id="search-version"
+                               placeholder="1.0.0"
+                               aria-label="Model Version">
+                    </div>
+                    <div class="col-md-1">
                         <label for="search-limit" class="form-label">Results per page</label>
                         <select class="form-select" id="search-limit" aria-label="Results per page">
                             <option value="10">10</option>
@@ -86,4 +92,3 @@
 {% block extra_scripts %}
 <script src="{{ url_for('static', filename='js/index.js') }}"></script>
 {% endblock %}
-

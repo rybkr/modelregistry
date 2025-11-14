@@ -89,6 +89,7 @@ class ApiClient {
         if (params.limit !== undefined) queryParams.append('limit', params.limit);
         if (params.query) queryParams.append('query', params.query);
         if (params.regex) queryParams.append('regex', params.regex);
+        if (params.version) queryParams.append('version', params.version)
         
         const queryString = queryParams.toString();
         const endpoint = `/packages${queryString ? `?${queryString}` : ''}`;
