@@ -3,6 +3,9 @@ from flask_cors import CORS
 from datetime import datetime
 import uuid
 import os
+import csv
+import json
+import io
 
 from registry_models import Package
 from storage import storage
@@ -437,6 +440,190 @@ def ingest_model():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/ingest/upload", methods=["POST"])
+def ingest_upload():
+    """Ingest packages from uploaded CSV or JSON file.
+
+    Accepts a file upload (CSV or JSON format) containing package data.
+    Validates and stores all packages from the file.
+
+    File Format Requirements:
+
+    CSV Format - Must include columns: name, version
+    Optional columns: metadata (JSON string)
+    Example:
+        name,version,metadata
+        package1,1.0.0,"{\"description\": \"test\"}"
+        package2,2.0.0,"{\"key\": \"value\"}"
+
+    JSON Format - Array of objects or single object
+    Required fields: name, version
+    Optional fields: metadata (object)
+    Example:
+        [
+            {"name": "package1", "version": "1.0.0", "metadata": {"key": "value"}},
+            {"name": "package2", "version": "2.0.0"}
+        ]
+
+    Request:
+        - Content-Type: multipart/form-data
+        - file: CSV or JSON file
+
+    Returns:
+        tuple: JSON response and HTTP status code
+            Success (201):
+                - message (str): Success confirmation
+                - imported_count (int): Number of packages successfully imported
+                - packages (list): List of created package details
+            Error (400): No file, invalid format, validation errors
+            Error (500): Server error during processing
+    """
+    try:
+        # Check if file is in request
+        if "file" not in request.files:
+            return jsonify({"error": "No file provided"}), 400
+
+        file = request.files["file"]
+
+        # Check if file has a filename
+        if file.filename == "":
+            return jsonify({"error": "No file selected"}), 400
+
+        # Validate file extension
+        allowed_extensions = {".csv", ".json"}
+        file_ext = os.path.splitext(file.filename)[1].lower()
+
+        if file_ext not in allowed_extensions:
+            return jsonify(
+                {
+                    "error": f"Invalid file type. Allowed types: {', '.join(allowed_extensions)}"
+                }
+            ), 400
+
+        # Read file content
+        file_content = file.read().decode("utf-8")
+
+        packages_data = []
+
+        # Parse based on file type
+        if file_ext == ".csv":
+            packages_data = parse_csv_content(file_content)
+        elif file_ext == ".json":
+            packages_data = parse_json_content(file_content)
+
+        if not packages_data:
+            return jsonify({"error": "No valid package data found in file"}), 400
+
+        # Validate and create packages
+        created_packages = []
+        errors = []
+
+        for idx, pkg_data in enumerate(packages_data):
+            try:
+                # Validate required fields - check for existence and non-empty values
+                if not pkg_data.get("name") or not pkg_data.get("version"):
+                    errors.append(
+                        f"Row {idx + 1}: Missing required fields (name, version)"
+                    )
+                    continue
+
+                # Create package
+                package_id = str(uuid.uuid4())
+                package = Package(
+                    id=package_id,
+                    name=pkg_data["name"],
+                    version=pkg_data["version"],
+                    uploaded_by=DEFAULT_USERNAME,
+                    upload_timestamp=datetime.utcnow(),
+                    size_bytes=0,
+                    metadata=pkg_data.get("metadata", {}),
+                    s3_key=None,
+                )
+
+                storage.create_package(package)
+                created_packages.append(package.to_dict())
+
+            except Exception as e:
+                errors.append(f"Row {idx + 1}: {str(e)}")
+
+        # Return response
+        if not created_packages and errors:
+            return jsonify({"error": "Failed to import any packages", "details": errors}), 400
+
+        response = {
+            "message": "Packages imported successfully",
+            "imported_count": len(created_packages),
+            "packages": created_packages,
+        }
+
+        if errors:
+            response["warnings"] = errors
+
+        return jsonify(response), 201
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to process file: {str(e)}"}), 500
+
+
+def parse_csv_content(content: str) -> list:
+    """Parse CSV content into list of package dictionaries.
+
+    Args:
+        content: CSV file content as string
+
+    Returns:
+        list: List of package dictionaries with name, version, metadata
+    """
+    packages = []
+    csv_reader = csv.DictReader(io.StringIO(content))
+
+    for row in csv_reader:
+        pkg_data = {
+            "name": row.get("name", "").strip(),
+            "version": row.get("version", "").strip(),
+        }
+
+        # Parse metadata if present
+        if "metadata" in row and row["metadata"] and row["metadata"].strip():
+            try:
+                pkg_data["metadata"] = json.loads(row["metadata"])
+            except json.JSONDecodeError:
+                pkg_data["metadata"] = {}
+        else:
+            pkg_data["metadata"] = {}
+
+        # Include all rows, even with missing fields (validation happens later)
+        packages.append(pkg_data)
+
+    return packages
+
+
+def parse_json_content(content: str) -> list:
+    """Parse JSON content into list of package dictionaries.
+
+    Args:
+        content: JSON file content as string
+
+    Returns:
+        list: List of package dictionaries with name, version, metadata
+    """
+    try:
+        data = json.loads(content)
+
+        # Handle single object
+        if isinstance(data, dict):
+            return [data]
+
+        # Handle array of objects
+        if isinstance(data, list):
+            return data
+
+        return []
+
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON format: {str(e)}")
 
 
 @app.route("/reset", methods=["DELETE"])
