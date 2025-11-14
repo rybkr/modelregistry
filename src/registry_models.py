@@ -1,7 +1,7 @@
-from typing import Optional, Dict, Any
+import re
 from dataclasses import dataclass
 from datetime import datetime
-import re
+from typing import Any, Dict, Optional
 
 
 @dataclass
@@ -61,7 +61,7 @@ class Package:
 
         singleVersion = re.compile(r"(\d+)(?:\.(\d+)(?:\.(\d+))?)?")
         versionRange = re.compile(
-            r"(\d+)(?:\.(\d+)(?:\.(\d+))?)?( )*\-( )*(\d+)(?:\.(\d+)(?:\.(\d+))?)?"
+            r"(\d+)(?:\.(\d+)(?:\.(\d+))?)?(?: )*\-(?: )*(\d+)(?:\.(\d+)(?:\.(\d+))?)?"
         )
         # Parse package version
         packageMatches = singleVersion.match(self.version)
@@ -139,22 +139,22 @@ class Package:
                         and testPatch == packagePatch
                     )
             else:
-                if testMatches.lastindex is None or testMatches.lastindex > 3:
+                if testMatches.lastindex is None or testMatches.lastindex > 6:
                     return False  # Malformed version
                 lowerTestMajor = int(testMatches.group(1))
                 lowerTestMinor = (
-                    int(testMatches.group(2)) if testMatches.lastindex >= 2 else -1
+                    int(testMatches.group(2)) if testMatches.lastindex >= 2 else 0
                 )
                 lowerTestPatch = (
-                    int(testMatches.group(3)) if testMatches.lastindex == 3 else -1
+                    int(testMatches.group(3)) if testMatches.lastindex >= 3 else 0
                 )
 
                 upperTestMajor = int(testMatches.group(4))
                 upperTestMinor = (
-                    int(testMatches.group(5)) if testMatches.lastindex >= 2 else -1
+                    int(testMatches.group(5)) if testMatches.lastindex >= 5 else 0
                 )
                 upperTestPatch = (
-                    int(testMatches.group(6)) if testMatches.lastindex == 3 else -1
+                    int(testMatches.group(6)) if testMatches.lastindex == 6 else 0
                 )
 
                 if lowerTestMajor < packageMajor and packageMajor < upperTestMajor:
@@ -167,7 +167,7 @@ class Package:
                     ):
                         if (
                             lowerTestPatch <= packagePatch
-                            and packagePatch >= upperTestPatch
+                            and packagePatch <= upperTestPatch
                         ):
                             return True
                         else:
@@ -176,3 +176,5 @@ class Package:
                         return False
                 else:
                     return False
+        # Catch all
+        return False
