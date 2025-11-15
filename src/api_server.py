@@ -1,7 +1,7 @@
 from flask import Flask, jsonify, request, render_template, Response
 from flask_cors import CORS
-from datetime import datetime
 from typing import Optional
+from datetime import datetime, timezone
 import uuid
 import os
 import csv
@@ -200,7 +200,7 @@ def health():
     return jsonify(
         {
             "status": "healthy",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "packages_count": len(storage.packages),
         }
     ), 200
@@ -282,7 +282,7 @@ def upload_package():
             name=data["name"],
             version=data["version"],
             uploaded_by=DEFAULT_USERNAME,
-            upload_timestamp=datetime.utcnow(),
+            upload_timestamp=datetime.now(timezone.utc),
             size_bytes=len(data.get("content", "")),
             metadata=data.get("metadata", {}),
             s3_key=None,
@@ -342,33 +342,39 @@ def list_packages():
         sortField = request.args.get("sort-field", "alpha")
         sortOrder = request.args.get("sort-order", "ascending")
 
+        # Step 1: Get all packages (no pagination yet)
         if query:
             packages = storage.search_packages(query, use_regex=regex)
-            packages = packages[offset : offset + limit]
         else:
-            packages = storage.list_packages(offset=offset, limit=limit)
+            # Get ALL packages without pagination limits
+            packages = list(storage.packages.values())
 
+        # Step 2: Filter by version (convert filter iterator to list immediately)
         if version:
-            packages = filter(lambda package: package.check_version(version), packages)
+            packages = list(filter(lambda package: package.check_version(version), packages))
 
-
+        # Step 3: Sort
         if sortField == "alpha":
-            packages = sorted(packages, key = lambda package: package.name.casefold())
+            packages = sorted(packages, key=lambda package: package.name.casefold())
         elif sortField == "date":
-            packages = sorted(packages, key = lambda package: package.upload_timestamp)
+            packages = sorted(packages, key=lambda package: package.upload_timestamp)
         elif sortField == "size":
-            packages = sorted(packages, key = lambda package: package.size_bytes)
+            packages = sorted(packages, key=lambda package: package.size_bytes)
         elif sortField == "version":
-            packages = sorted(packages, key = lambda package: package.get_version_int())
+            packages = sorted(packages, key=lambda package: package.get_version_int())
 
         if sortOrder == "descending":
             packages.reverse()
+
+        # Step 4: Paginate (apply offset/limit)
+        paginated_packages = packages[offset : offset + limit]
+
         return jsonify(
             {
-                "packages": [p.to_dict() for p in packages],
+                "packages": [p.to_dict() for p in paginated_packages],
                 "offset": offset,
                 "limit": limit,
-                "total": len(storage.packages),
+                "total": len(packages),  # Total count of filtered results, not all packages
             }
         ), 200
 
@@ -593,7 +599,7 @@ def ingest_model():
             name=model_name,
             version="1.0.0",
             uploaded_by=DEFAULT_USERNAME,
-            upload_timestamp=datetime.utcnow(),
+            upload_timestamp=datetime.now(timezone.utc),
             size_bytes=0,
             metadata={"url": url, "scores": scores},
             s3_key=None,
@@ -710,7 +716,7 @@ def ingest_upload():
                     name=pkg_data["name"],
                     version=pkg_data["version"],
                     uploaded_by=DEFAULT_USERNAME,
-                    upload_timestamp=datetime.utcnow(),
+                    upload_timestamp=datetime.now(timezone.utc),
                     size_bytes=0,
                     metadata=pkg_data.get("metadata", {}),
                     s3_key=None,
