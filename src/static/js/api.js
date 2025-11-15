@@ -30,11 +30,11 @@ class ApiClient {
         try {
             const response = await fetch(url, config);
             const data = await response.json();
-            
+
             if (!response.ok) {
                 throw new Error(data.error || `HTTP error! status: ${response.status}`);
             }
-            
+
             return data;
         } catch (error) {
             console.error('API request failed:', error);
@@ -90,7 +90,9 @@ class ApiClient {
         if (params.query) queryParams.append('query', params.query);
         if (params.regex) queryParams.append('regex', params.regex);
         if (params.version) queryParams.append('version', params.version)
-        
+        if (params.sortField) queryParams.append('sort-field', params.sortField)
+        if (params.sortOrder) queryParams.append('sort-order', params.sortOrder)
+
         const queryString = queryParams.toString();
         const endpoint = `/packages${queryString ? `?${queryString}` : ''}`;
         return this.request(endpoint);
@@ -162,4 +164,3 @@ class ApiClient {
 
 // Create and export a singleton instance
 const apiClient = new ApiClient();
-

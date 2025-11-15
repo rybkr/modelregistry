@@ -163,6 +163,8 @@ def list_packages():
         - query (str, optional): Search query string
         - regex (bool, optional): Enable regex search mode (default: false)
         - version (str, optional): A version string filter.
+        - sort-field (str, optional): A string specifying one of the following sort fields: 'alpha', 'version', 'size', 'date'
+        - sort-order (str, optional): Ascending or descending
 
     Returns:
         tuple: JSON response and HTTP status code
@@ -179,6 +181,8 @@ def list_packages():
         query = request.args.get("query", "")
         regex = request.args.get("regex", "false").lower() == "true"
         version = request.args.get("version", "")
+        sortField = request.args.get("sort-field", "alpha")
+        sortOrder = request.args.get("sort-order", "ascending")
 
         if query:
             packages = storage.search_packages(query, use_regex=regex)
@@ -189,6 +193,18 @@ def list_packages():
         if version:
             packages = filter(lambda package: package.check_version(version), packages)
 
+
+        if sortField == "alpha":
+            packages = sorted(packages, key = lambda package: package.name.casefold())
+        elif sortField == "date":
+            packages = sorted(packages, key = lambda package: package.upload_timestamp)
+        elif sortField == "size":
+            packages = sorted(packages, key = lambda package: package.size_bytes)
+        elif sortField == "version":
+            packages = sorted(packages, key = lambda package: package.get_version_int())
+
+        if sortOrder == "descending":
+            packages.reverse()
         return jsonify(
             {
                 "packages": [p.to_dict() for p in packages],
@@ -377,9 +393,9 @@ def ingest_model():
 
         # Validate all non-latency metrics from the rate behavior
         # These are all metrics returned by compute_all_metrics plus net_score
-        
+
         for metric_name, metric in results.items():
-            
+
             # Handle size_score which is a dict of device scores
             if metric_name == "size_score":
                 if isinstance(metric.value, dict) and len(metric.value) > 0:
