@@ -7,6 +7,8 @@ let currentLimit = 25;
 let currentQuery = '';
 let currentRegex = false;
 let currentVersion = '';
+let currentSortField = '';
+let currentSortOrder = '';
 
 /**
  * Initialize the page
@@ -18,6 +20,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const urlQuery = getUrlParameter('query');
     const urlRegex = getUrlParameter('regex');
     const urlVersion = getUrlParameter('version');
+    const urlSortField = getUrlParameter('sort-field');
+    const urlSortOrder = getUrlParameter('sort-order');
 
     if (urlOffset) currentOffset = parseInt(urlOffset, 10);
     if (urlLimit) {
@@ -31,6 +35,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (urlVersion) {
         currentVersion = urlVersion;
         document.getElementById('search-version').value = urlVersion;
+    }
+    if (urlSortField) {
+      currentSortField = urlSortField;
+      document.getElementById('sort-field').value = urlSortField;
+    }
+    if (urlSortOrder) {
+      currentSortOrder = urlSortOrder;
+      document.getElementById('sort-order').value = urlSortOrder;
     }
     if (urlRegex === 'true') {
         currentRegex = true;
@@ -53,6 +65,8 @@ async function handleSearch(event) {
     currentQuery = document.getElementById('search-query').value.trim();
     currentRegex = document.getElementById('use-regex').checked;
     currentVersion = document.getElementById('search-version').value.trim();
+    currentSortField = document.getElementById('sort-field').value.trim();
+    currentSortOrder = document.getElementById('sort-order').value.trim();
     currentOffset = 0;
     currentLimit = parseInt(document.getElementById('search-limit').value, 10);
 
@@ -64,6 +78,16 @@ async function handleSearch(event) {
         setUrlParameter('query', currentQuery);
     } else {
         removeUrlParameter('query');
+    }
+    if (currentSortField) {
+        setUrlParameter('sort-field', currentSortField);
+    } else {
+        removeUrlParameter('sort-field');
+    }
+    if (currentSortOrder) {
+        setUrlParameter('sort-order', currentSortOrder);
+    } else {
+        removeUrlParameter('sort-order');
     }
     if (currentRegex) {
         setUrlParameter('regex', 'true');
@@ -80,14 +104,24 @@ async function handleSearch(event) {
 async function handleClearSearch() {
     document.getElementById('search-query').value = '';
     document.getElementById('use-regex').checked = false;
+    document.getElementById('search-version').value = '';
+    document.getElementById('sort-field').value = '';
+    document.getElementById('sort-order').value = '';
+
     currentQuery = '';
     currentRegex = false;
     currentOffset = 0;
+    currentVersion = '';
+    currentSortField = '';
+    currentSortOrder = '';
 
     // Clear URL parameters
     removeUrlParameter('query');
     removeUrlParameter('regex');
     removeUrlParameter('offset');
+    removeUrlParameter('version');
+    removeUrlParamter('sort-field');
+    removeUrlParameter('sort-order');
 
     await loadPackages();
 }
@@ -109,7 +143,9 @@ async function loadPackages() {
             limit: currentLimit,
             query: currentQuery,
             regex: currentRegex,
-            version: currentVersion
+            version: currentVersion,
+            sortField: currentSortField,
+            sortOrder: currentSortOrder,
         });
 
         loadingIndicator.style.display = 'none';
@@ -147,7 +183,7 @@ async function loadPackages() {
  */
 function renderPackages(packages) {
     const container = document.getElementById('packages-container');
-    
+
     const packagesHtml = packages.map(pkg => {
         const uploadDate = formatDate(pkg.upload_timestamp);
         const size = formatBytes(pkg.size_bytes);
@@ -164,8 +200,8 @@ function renderPackages(packages) {
                             </h5>
                             <p class="card-text text-muted mb-2">
                                 <small>
-                                    <strong>Version:</strong> ${escapeHtml(pkg.version)} | 
-                                    <strong>Size:</strong> ${size} | 
+                                    <strong>Version:</strong> ${escapeHtml(pkg.version)} |
+                                    <strong>Size:</strong> ${size} |
                                     <strong>Uploaded:</strong> ${uploadDate}
                                 </small>
                             </p>
@@ -290,4 +326,3 @@ function escapeHtml(text) {
     div.textContent = text;
     return div.innerHTML;
 }
-

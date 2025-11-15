@@ -45,6 +45,25 @@ class Package:
             "s3_key": self.s3_key,
         }
 
+
+    def get_version_int(self) -> int:
+        """Returns the package's version as an integer, with the major, minor and
+        patch concatenated with each other.
+
+        Returns:
+            int: The package's version as an integer."""
+        expr = re.compile(r"(\d+)(?:\.(\d+)(?:\.(\d+))?)?")
+        packageMatches = expr.match(self.version)
+        packageMajor = int(packageMatches.group(1))
+        packageMinor = (
+            int(packageMatches.group(2)) if packageMatches.lastindex >= 2 else 0
+        )
+        packagePatch = (
+            int(packageMatches.group(3)) if packageMatches.lastindex == 3 else 0
+        )
+
+        return int(str(packageMajor) + str(packageMinor) + str(packagePatch))
+
     def check_version(self, version: str) -> bool:
         """Check if the package matches the given version string.
 

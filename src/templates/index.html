@@ -34,6 +34,22 @@
                                aria-label="Model Version">
                     </div>
                     <div class="col-md-1">
+                        <label for="sort-field" class="form-label">Sort Field</label>
+                        <select class="form-select" id="sort-field" aria-label="Field to sort on">
+                            <option value="alpha" selected>Alphabetical</option>
+                            <option value="version">Version</option>
+                            <option value="size">Size</option>
+                            <option value="date">Date Uploaded</option>
+                        </select>
+                    </div>
+                    <div class="col-md-1">
+                        <label for="sort-order" class="form-label">Sort Order</label>
+                        <select class="form-select" id="sort-order" aria-label="Sort Order">
+                            <option value="ascending" selected>Ascending</option>
+                            <option value="descending">Descending</option>
+                        </select>
+                    </div>
+                    <div class="col-md-1">
                         <label for="search-limit" class="form-label">Results per page</label>
                         <select class="form-select" id="search-limit" aria-label="Results per page">
                             <option value="10">10</option>
