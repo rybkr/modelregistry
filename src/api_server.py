@@ -1,11 +1,14 @@
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request, render_template, send_file
 from flask_cors import CORS
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 import os
 import csv
 import json
 import io
+import zipfile
+import tempfile
+from pathlib import Path
 
 from registry_models import Package
 from storage import storage
@@ -42,7 +45,7 @@ def health():
     return jsonify(
         {
             "status": "healthy",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "packages_count": len(storage.packages),
         }
     ), 200
@@ -124,7 +127,7 @@ def upload_package():
             name=data["name"],
             version=data["version"],
             uploaded_by=DEFAULT_USERNAME,
-            upload_timestamp=datetime.utcnow(),
+            upload_timestamp=datetime.now(timezone.utc),
             size_bytes=len(data.get("content", "")),
             metadata=data.get("metadata", {}),
             s3_key=None,
@@ -184,33 +187,39 @@ def list_packages():
         sortField = request.args.get("sort-field", "alpha")
         sortOrder = request.args.get("sort-order", "ascending")
 
+        # Step 1: Get all packages (no pagination yet)
         if query:
             packages = storage.search_packages(query, use_regex=regex)
-            packages = packages[offset : offset + limit]
         else:
-            packages = storage.list_packages(offset=offset, limit=limit)
+            # Get ALL packages without pagination limits
+            packages = list(storage.packages.values())
 
+        # Step 2: Filter by version (convert filter iterator to list immediately)
         if version:
-            packages = filter(lambda package: package.check_version(version), packages)
+            packages = list(filter(lambda package: package.check_version(version), packages))
 
-
+        # Step 3: Sort
         if sortField == "alpha":
-            packages = sorted(packages, key = lambda package: package.name.casefold())
+            packages = sorted(packages, key=lambda package: package.name.casefold())
         elif sortField == "date":
-            packages = sorted(packages, key = lambda package: package.upload_timestamp)
+            packages = sorted(packages, key=lambda package: package.upload_timestamp)
         elif sortField == "size":
-            packages = sorted(packages, key = lambda package: package.size_bytes)
+            packages = sorted(packages, key=lambda package: package.size_bytes)
         elif sortField == "version":
-            packages = sorted(packages, key = lambda package: package.get_version_int())
+            packages = sorted(packages, key=lambda package: package.get_version_int())
 
         if sortOrder == "descending":
             packages.reverse()
+
+        # Step 4: Paginate (apply offset/limit)
+        paginated_packages = packages[offset : offset + limit]
+
         return jsonify(
             {
-                "packages": [p.to_dict() for p in packages],
+                "packages": [p.to_dict() for p in paginated_packages],
                 "offset": offset,
                 "limit": limit,
-                "total": len(storage.packages),
+                "total": len(packages),  # Total count of filtered results, not all packages
             }
         ), 200
 
@@ -288,6 +297,137 @@ def delete_package(package_id):
         return jsonify({"message": "Package deleted successfully"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/packages/<package_id>/download", methods=["GET"])
+def download_package(package_id):
+    """Download a package as a ZIP file.
+
+    Downloads the complete model package or specific components based on the
+    content parameter. For HuggingFace models, fetches files from HuggingFace.
+    For uploaded packages, returns stored content.
+
+    Args:
+        package_id (str): Unique package identifier (UUID)
+
+    Query Parameters:
+        content (str, optional): What to download - 'full', 'weights', or 'datasets'
+            Default: 'full'
+
+    Returns:
+        file: ZIP file download containing the requested package content
+        tuple: JSON error response and HTTP status code on failure
+            Error (404): Package not found
+            Error (400): Invalid content type or missing URL
+            Error (500): Server error during download preparation
+    """
+    try:
+        package = storage.get_package(package_id)
+        if not package:
+            return jsonify({"error": "Package not found"}), 404
+
+        content_type = request.args.get("content", "full")
+        if content_type not in ["full", "weights", "datasets"]:
+            return jsonify({"error": "Invalid content type. Must be 'full', 'weights', or 'datasets'"}), 400
+
+        # Get the model URL from metadata
+        url = package.metadata.get("url")
+        if not url:
+            return jsonify({"error": "Package has no associated model URL to download"}), 400
+
+        # Fetch model files from HuggingFace
+        model = Model(model=ModelResource(url=url))
+
+        # Determine file patterns based on content type
+        # Use **/ prefix to match files in all subdirectories recursively
+        if content_type == "weights":
+            # Model weight files (matches in all subdirectories)
+            patterns = [
+                "**/*.bin", "**/*.safetensors", "**/*.h5", "**/*.pt",
+                "**/*.onnx", "**/*.tflite", "**/config.json", "**/*.json"
+            ]
+        elif content_type == "datasets":
+            # Dataset files (matches in all subdirectories)
+            patterns = [
+                "**/*.csv", "**/*.json", "**/*.parquet",
+                "**/*.arrow", "**/*.txt", "**/dataset_info.json"
+            ]
+        else:  # full
+            patterns = None  # Get all files
+
+        # Create a temporary file (not directory) for the ZIP
+        # Using delete=False so we can control when it's deleted
+        temp_zip = tempfile.NamedTemporaryFile(
+            suffix='.zip',
+            prefix=f"{package.name}-{package.version}-",
+            delete=False
+        )
+        temp_zip_path = temp_zip.name
+        temp_zip.close()
+
+        try:
+            # Create ZIP file with model contents
+            files_added = 0
+            with zipfile.ZipFile(temp_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                with model.model.open_files(allow_patterns=patterns) as repo:
+                    # Add all files from the repository to the ZIP
+                    for file_path in repo.glob("**/*"):
+                        if file_path.is_file():
+                            # Get relative path from repo root
+                            relative_path = file_path.relative_to(repo.root)
+
+                            # Add file directly to ZIP (handles binary correctly)
+                            # This writes the file from disk into the ZIP archive
+                            zipf.write(file_path, arcname=str(relative_path))
+                            files_added += 1
+
+            if files_added == 0:
+                # Clean up temp file
+                os.unlink(temp_zip_path)
+                return jsonify({"error": "No files found matching the specified content type"}), 400
+
+            # Record download event
+            storage.record_event(
+                "package_downloaded",
+                package=package,
+                actor="api",
+                details={
+                    "content_type": content_type,
+                    "files_count": files_added
+                },
+            )
+
+            # Return the ZIP file
+            # Flask will handle reading and sending the file, then we clean up
+            response = send_file(
+                temp_zip_path,
+                mimetype='application/zip',
+                as_attachment=True,
+                download_name=f"{package.name}-{package.version}.zip"
+            )
+
+            # Register cleanup function to delete temp file after response is sent
+            @response.call_on_close
+            def cleanup():
+                try:
+                    if os.path.exists(temp_zip_path):
+                        os.unlink(temp_zip_path)
+                except Exception:
+                    pass  # Best effort cleanup
+
+            return response
+
+        except Exception as e:
+            # Clean up temp file on error
+            try:
+                if os.path.exists(temp_zip_path):
+                    os.unlink(temp_zip_path)
+            except Exception:
+                pass
+            raise  # Re-raise the original exception
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to download package: {str(e)}"}), 500
 
 
 @app.route("/packages/<package_id>/rate", methods=["GET"])
@@ -435,7 +575,7 @@ def ingest_model():
             name=model_name,
             version="1.0.0",
             uploaded_by=DEFAULT_USERNAME,
-            upload_timestamp=datetime.utcnow(),
+            upload_timestamp=datetime.now(timezone.utc),
             size_bytes=0,
             metadata={"url": url, "scores": scores},
             s3_key=None,
@@ -552,7 +692,7 @@ def ingest_upload():
                     name=pkg_data["name"],
                     version=pkg_data["version"],
                     uploaded_by=DEFAULT_USERNAME,
-                    upload_timestamp=datetime.utcnow(),
+                    upload_timestamp=datetime.now(timezone.utc),
                     size_bytes=0,
                     metadata=pkg_data.get("metadata", {}),
                     s3_key=None,
