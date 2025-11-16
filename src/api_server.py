@@ -1,18 +1,19 @@
-from flask import Flask, jsonify, request, render_template
-from flask_cors import CORS
-from datetime import datetime
-import uuid
-import os
 import csv
-import json
 import io
+import json
+import os
+import uuid
+from datetime import datetime
 
-from registry_models import Package
-from storage import storage
-from metrics_engine import compute_all_metrics
+from flask import Flask, jsonify, render_template, request, Response
+from flask_cors import CORS
+
 from metrics.net_score import NetScore
+from metrics_engine import compute_all_metrics
 from models import Model
+from registry_models import Package
 from resources.model_resource import ModelResource
+from storage import storage
 
 # Get the directory where this file is located (src directory)
 SRC_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -29,9 +30,6 @@ DEFAULT_PASSWORD = "'correcthorsebatterystaple123(!__+@**(A;DROP TABLE packages'
 @app.route("/health", methods=["GET"])
 def health():
     """Check the health status of the Model Registry API.
-
-    Returns health information including server status, current timestamp,
-    the total number of packages in the registry.
 
     Returns:
         tuple: JSON response with health data and 200 status code
@@ -128,7 +126,7 @@ def upload_package():
             size_bytes=len(data.get("content", "")),
             metadata=data.get("metadata", {}),
             s3_key=None,
-        )
+            )
 
         storage.create_package(package)
 
@@ -149,7 +147,55 @@ def upload_package():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/artifacts", methods=["POST"])
+def list_artifacts():
+    """List artifacts, given an offset for pagination, and a search query.
 
+    Query Parameters:
+        - offset (int, optional):  Starting index for pagination (default: 0)
+    Header Parameters:
+        - X-Authorization (string, required): Authorization string
+
+    Request Body (JSON) - An array, with each element containing the following:
+        - name (string, required): Name of an artifact. 
+        - types (array of string, optional): One of the following: "model, dataset", code"
+
+    Returns:
+        Body:
+            Success (200) - Array of:
+                - name (str): Model name
+                - id (str): Model ID
+                - type (str): Artifact type - "dataset", "model", "code"
+            Error (400): Missing required fields or no data provided
+            Error (403): Authentication failed.
+            Error (413): Too many artifacts returned.
+        
+        Headers:
+            - offset (string, optional): Offset to start the next search from
+    """
+    offset = int(request.args.get("offset",0))
+    limit = 20
+    xauth = request.headers.get("X-Authorization", "")
+    # TODO - check xauth
+    data = request.get_json()
+    if not data or len(data) == 0:
+        return jsonify({"error": "No data provided"}), 400
+    return_packages = list()
+    for artifact in data:
+        return_packages.extend(storage.search_packages(artifact.get('name')))
+        # TODO - filter by artifact type
+    
+    if offset < len(return_packages):
+        return_packages = return_packages[offset: offset + limit]
+        offset += limit
+
+    response = map(lambda package: {"name": package.name, "id": package.id, "type": "model"}, return_packages)
+        
+    response = list(response)
+    resp = jsonify(response)
+    resp.headers['offset'] = offset
+    return resp
+    
 @app.route("/packages", methods=["GET"])
 def list_packages():
     """List packages with optional search and pagination.
@@ -193,15 +239,14 @@ def list_packages():
         if version:
             packages = filter(lambda package: package.check_version(version), packages)
 
-
         if sortField == "alpha":
-            packages = sorted(packages, key = lambda package: package.name.casefold())
+            packages = sorted(packages, key=lambda package: package.name.casefold())
         elif sortField == "date":
-            packages = sorted(packages, key = lambda package: package.upload_timestamp)
+            packages = sorted(packages, key=lambda package: package.upload_timestamp)
         elif sortField == "size":
-            packages = sorted(packages, key = lambda package: package.size_bytes)
+            packages = sorted(packages, key=lambda package: package.size_bytes)
         elif sortField == "version":
-            packages = sorted(packages, key = lambda package: package.get_version_int())
+            packages = sorted(packages, key=lambda package: package.get_version_int())
 
         if sortOrder == "descending":
             packages.reverse()
@@ -395,7 +440,6 @@ def ingest_model():
         # These are all metrics returned by compute_all_metrics plus net_score
 
         for metric_name, metric in results.items():
-
             # Handle size_score which is a dict of device scores
             if metric_name == "size_score":
                 if isinstance(metric.value, dict) and len(metric.value) > 0:
@@ -403,18 +447,24 @@ def ingest_model():
                     for device, score in metric.value.items():
                         if score < 0.5:
                             return jsonify(
-                                {"error": f"Failed threshold: {metric_name}.{device} {score:.3f} < 0.5"}
+                                {
+                                    "error": f"Failed threshold: {metric_name}.{device} {score:.3f} < 0.5"
+                                }
                             ), 400
                 else:
                     # Invalid size_score, fail
                     return jsonify(
-                        {"error": f"Failed threshold: {metric_name} is invalid or empty"}
+                        {
+                            "error": f"Failed threshold: {metric_name} is invalid or empty"
+                        }
                     ), 400
             # Handle numeric metrics
             elif isinstance(metric.value, (int, float)):
                 if metric.value < 0.5:
                     return jsonify(
-                        {"error": f"Failed threshold: {metric_name} {metric.value:.3f} < 0.5"}
+                        {
+                            "error": f"Failed threshold: {metric_name} {metric.value:.3f} < 0.5"
+                        }
                     ), 400
             else:
                 # Unknown metric type, fail for safety
@@ -566,7 +616,9 @@ def ingest_upload():
 
         # Return response
         if not created_packages and errors:
-            return jsonify({"error": "Failed to import any packages", "details": errors}), 400
+            return jsonify(
+                {"error": "Failed to import any packages", "details": errors}
+            ), 400
 
         response = {
             "message": "Packages imported successfully",
