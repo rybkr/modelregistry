@@ -120,7 +120,7 @@ async function handleClearSearch() {
     removeUrlParameter('regex');
     removeUrlParameter('offset');
     removeUrlParameter('version');
-    removeUrlParamter('sort-field');
+    removeUrlParameter('sort-field');
     removeUrlParameter('sort-order');
 
     await loadPackages();
@@ -153,11 +153,15 @@ async function loadPackages() {
         if (response.packages && response.packages.length > 0) {
             renderPackages(response.packages);
             renderPagination(response.total, response.offset, response.limit);
+            // Announce results to screen readers
+            const resultCount = response.packages.length;
+            const totalCount = response.total;
+            packagesContainer.setAttribute('aria-label', `Package list: Showing ${resultCount} of ${totalCount} packages`);
         } else {
             packagesContainer.innerHTML = `
                 <div class="card">
                     <div class="card-body">
-                        <p class="text-muted text-center py-5">
+                        <p class="text-muted text-center py-5" role="status" aria-live="polite">
                             ${currentQuery ? 'No packages found matching your search.' : 'No packages found. Upload or ingest a model to get started.'}
                         </p>
                     </div>
@@ -241,6 +245,9 @@ function renderPagination(total, offset, limit) {
     const totalPages = Math.ceil(total / limit);
     const currentPage = Math.floor(offset / limit) + 1;
 
+    // Update aria-label with current page info
+    container.setAttribute('aria-label', `Package pagination: Page ${currentPage} of ${totalPages}`);
+
     let paginationHtml = '';
 
     // Previous button
@@ -248,15 +255,19 @@ function renderPagination(total, offset, limit) {
         const prevOffset = offset - limit;
         paginationHtml += `
             <li class="page-item">
-                <a class="page-link" href="#" data-offset="${prevOffset}" aria-label="Previous page">
+                <a class="page-link" href="#" data-offset="${prevOffset}" aria-label="Go to previous page, page ${currentPage - 1}">
                     <span aria-hidden="true">&laquo;</span>
+                    <span class="visually-hidden">Previous</span>
                 </a>
             </li>
         `;
     } else {
         paginationHtml += `
             <li class="page-item disabled">
-                <span class="page-link" aria-hidden="true">&laquo;</span>
+                <span class="page-link" aria-disabled="true" aria-label="Previous page (disabled)">
+                    <span aria-hidden="true">&laquo;</span>
+                    <span class="visually-hidden">Previous</span>
+                </span>
             </li>
         `;
     }
@@ -274,13 +285,16 @@ function renderPagination(total, offset, limit) {
         if (i === currentPage) {
             paginationHtml += `
                 <li class="page-item active" aria-current="page">
-                    <span class="page-link">${i}</span>
+                    <span class="page-link">
+                        ${i}
+                        <span class="visually-hidden">(current page)</span>
+                    </span>
                 </li>
             `;
         } else {
             paginationHtml += `
                 <li class="page-item">
-                    <a class="page-link" href="#" data-offset="${pageOffset}">${i}</a>
+                    <a class="page-link" href="#" data-offset="${pageOffset}" aria-label="Go to page ${i}">${i}</a>
                 </li>
             `;
         }
@@ -291,15 +305,19 @@ function renderPagination(total, offset, limit) {
         const nextOffset = offset + limit;
         paginationHtml += `
             <li class="page-item">
-                <a class="page-link" href="#" data-offset="${nextOffset}" aria-label="Next page">
+                <a class="page-link" href="#" data-offset="${nextOffset}" aria-label="Go to next page, page ${currentPage + 1}">
                     <span aria-hidden="true">&raquo;</span>
+                    <span class="visually-hidden">Next</span>
                 </a>
             </li>
         `;
     } else {
         paginationHtml += `
             <li class="page-item disabled">
-                <span class="page-link" aria-hidden="true">&raquo;</span>
+                <span class="page-link" aria-disabled="true" aria-label="Next page (disabled)">
+                    <span aria-hidden="true">&raquo;</span>
+                    <span class="visually-hidden">Next</span>
+                </span>
             </li>
         `;
     }
@@ -313,7 +331,9 @@ function renderPagination(total, offset, limit) {
             currentOffset = parseInt(link.dataset.offset, 10);
             setUrlParameter('offset', currentOffset);
             await loadPackages();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            // Scroll to top with reduced motion support
+            const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            window.scrollTo({ top: 0, behavior: prefersReducedMotion ? 'auto' : 'smooth' });
         });
     });
 }
@@ -322,6 +342,7 @@ function renderPagination(total, offset, limit) {
  * Escape HTML to prevent XSS
  */
 function escapeHtml(text) {
+    if (typeof text !== 'string') return text;
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;

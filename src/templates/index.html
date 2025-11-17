@@ -25,52 +25,60 @@
                         <label for="search-query" class="form-label">Search Packages</label>
                         <input type="text" class="form-control" id="search-query"
                                placeholder="Enter model name or search term..."
-                               aria-label="Search query">
+                               aria-label="Search query"
+                               aria-describedby="search-query-help">
+                        <div id="search-query-help" class="visually-hidden">Search for packages by name or other terms</div>
                     </div>
                     <div class="col-md-1">
                         <label for="search-version" class="form-label">Version</label>
                         <input type="text" class="form-control" id="search-version"
                                placeholder="1.0.0"
-                               aria-label="Model Version">
+                               aria-label="Model Version"
+                               aria-describedby="search-version-help">
+                        <div id="search-version-help" class="visually-hidden">Filter packages by version number</div>
                     </div>
                     <div class="col-md-1">
                         <label for="sort-field" class="form-label">Sort Field</label>
-                        <select class="form-select" id="sort-field" aria-label="Field to sort on">
+                        <select class="form-select" id="sort-field" aria-label="Field to sort on" aria-describedby="sort-field-help">
                             <option value="alpha" selected>Alphabetical</option>
                             <option value="version">Version</option>
                             <option value="size">Size</option>
                             <option value="date">Date Uploaded</option>
                         </select>
+                        <div id="sort-field-help" class="visually-hidden">Choose which field to sort packages by</div>
                     </div>
                     <div class="col-md-1">
                         <label for="sort-order" class="form-label">Sort Order</label>
-                        <select class="form-select" id="sort-order" aria-label="Sort Order">
+                        <select class="form-select" id="sort-order" aria-label="Sort Order" aria-describedby="sort-order-help">
                             <option value="ascending" selected>Ascending</option>
                             <option value="descending">Descending</option>
                         </select>
+                        <div id="sort-order-help" class="visually-hidden">Choose ascending or descending sort order</div>
                     </div>
                     <div class="col-md-1">
                         <label for="search-limit" class="form-label">Results per page</label>
-                        <select class="form-select" id="search-limit" aria-label="Results per page">
+                        <select class="form-select" id="search-limit" aria-label="Results per page" aria-describedby="search-limit-help">
                             <option value="10">10</option>
                             <option value="25" selected>25</option>
                             <option value="50">50</option>
                             <option value="100">100</option>
                         </select>
+                        <div id="search-limit-help" class="visually-hidden">Number of results to display per page</div>
                     </div>
                     <div class="col-md-2 d-flex align-items-end">
                         <div class="form-check mb-3">
-                            <input class="form-check-input" type="checkbox" id="use-regex" aria-label="Use regular expression">
+                            <input class="form-check-input" type="checkbox" id="use-regex" aria-describedby="use-regex-help">
                             <label class="form-check-label" for="use-regex">
                                 Regex
                             </label>
+                            <div id="use-regex-help" class="visually-hidden">Enable regular expression search</div>
                         </div>
                     </div>
                     <div class="col-12">
                         <button type="submit" class="btn btn-primary">
                             <i class="bi bi-search me-1" aria-hidden="true"></i>Search
                         </button>
-                        <button type="button" class="btn btn-outline-secondary" id="clear-search">
+                        <button type="button" class="btn btn-outline-secondary" id="clear-search" aria-label="Clear search filters">
                             <i class="bi bi-x-circle me-1" aria-hidden="true"></i>Clear
                         </button>
                     </div>
@@ -79,15 +87,15 @@
         </div>
 
         <!-- Loading indicator -->
-        <div id="loading-indicator" class="text-center py-5" style="display: none;" role="status" aria-live="polite">
-            <div class="spinner-border text-primary" role="status">
+        <div id="loading-indicator" class="text-center py-5" style="display: none;" role="status" aria-live="polite" aria-label="Loading packages">
+            <div class="spinner-border text-primary" role="status" aria-hidden="true">
                 <span class="visually-hidden">Loading packages...</span>
             </div>
-            <p class="mt-2">Loading packages...</p>
+            <p class="mt-2" aria-live="polite">Loading packages...</p>
         </div>
 
         <!-- Packages List -->
-        <div id="packages-container">
+        <div id="packages-container" role="region" aria-label="Package list">
             <div class="card">
                 <div class="card-body">
                     <p class="text-muted text-center py-5">No packages found. Upload or ingest a model to get started.</p>
@@ -96,7 +104,7 @@
         </div>
 
         <!-- Pagination -->
-        <nav id="pagination-container" aria-label="Package pagination" style="display: none;">
+        <nav id="pagination-container" aria-label="Package pagination" style="display: none;" role="navigation">
             <ul class="pagination justify-content-center">
                 <!-- Pagination will be populated by JavaScript -->
             </ul>
