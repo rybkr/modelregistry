@@ -47,7 +47,7 @@ class ApiClient {
      * @returns {Promise<object>}
      */
     async getHealth() {
-        return this.request('/health');
+        return this.request('/api/health');
     }
 
     /**
@@ -60,7 +60,7 @@ class ApiClient {
         if (params.window !== undefined) queryParams.append('window', params.window);
         if (params.limit !== undefined) queryParams.append('limit', params.limit);
         const queryString = queryParams.toString();
-        const endpoint = `/health/activity${queryString ? `?${queryString}` : ''}`;
+        const endpoint = `/api/health/activity${queryString ? `?${queryString}` : ''}`;
         return this.request(endpoint);
     }
 
@@ -74,7 +74,7 @@ class ApiClient {
         if (params.limit !== undefined) queryParams.append('limit', params.limit);
         if (params.level) queryParams.append('level', params.level);
         const queryString = queryParams.toString();
-        const endpoint = `/health/logs${queryString ? `?${queryString}` : ''}`;
+        const endpoint = `/api/health/logs${queryString ? `?${queryString}` : ''}`;
         return this.request(endpoint);
     }
 
@@ -94,7 +94,7 @@ class ApiClient {
         if (params.sortOrder) queryParams.append('sort-order', params.sortOrder)
 
         const queryString = queryParams.toString();
-        const endpoint = `/packages${queryString ? `?${queryString}` : ''}`;
+        const endpoint = `/api/packages${queryString ? `?${queryString}` : ''}`;
         return this.request(endpoint);
     }
 
@@ -104,7 +104,7 @@ class ApiClient {
      * @returns {Promise<object>}
      */
     async getPackage(packageId) {
-        return this.request(`/packages/${packageId}`);
+        return this.request(`/api/packages/${packageId}`);
     }
 
     /**
@@ -113,7 +113,7 @@ class ApiClient {
      * @returns {Promise<object>}
      */
     async uploadPackage(packageData) {
-        return this.request('/packages', {
+        return this.request('/api/packages', {
             method: 'POST',
             body: packageData,
         });
@@ -125,7 +125,7 @@ class ApiClient {
      * @returns {Promise<object>}
      */
     async deletePackage(packageId) {
-        return this.request(`/packages/${packageId}`, {
+        return this.request(`/api/packages/${packageId}`, {
             method: 'DELETE',
         });
     }
@@ -136,7 +136,7 @@ class ApiClient {
      * @returns {Promise<object>}
      */
     async ratePackage(packageId) {
-        return this.request(`/packages/${packageId}/rate`);
+        return this.request(`/api/packages/${packageId}/rate`);
     }
 
     /**
@@ -145,7 +145,7 @@ class ApiClient {
      * @returns {Promise<object>}
      */
     async ingestModel(url) {
-        return this.request('/ingest', {
+        return this.request('/api/ingest', {
             method: 'POST',
             body: { url },
         });
@@ -156,7 +156,7 @@ class ApiClient {
      * @returns {Promise<object>}
      */
     async resetRegistry() {
-        return this.request('/reset', {
+        return this.request('/api/reset', {
             method: 'DELETE',
         });
     }

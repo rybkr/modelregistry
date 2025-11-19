@@ -26,7 +26,7 @@ DEFAULT_USERNAME = "ece30861defaultadminuser"
 DEFAULT_PASSWORD = "'correcthorsebatterystaple123(!__+@**(A;DROP TABLE packages'"
 
 
-@app.route("/health", methods=["GET"])
+@app.route("/api/health", methods=["GET"])
 def health():
     """Check the health status of the Model Registry API.
 
@@ -87,7 +87,7 @@ def api_root():
     return jsonify({"message": "Model Registry API v1.0", "status": "running"}), 200
 
 
-@app.route("/packages", methods=["POST"])
+@app.route("/api/packages", methods=["POST"])
 def upload_package():
     """Upload a new package to the registry.
 
@@ -150,7 +150,7 @@ def upload_package():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/packages", methods=["GET"])
+@app.route("/api/packages", methods=["GET"])
 def list_packages():
     """List packages with optional search and pagination.
 
@@ -218,7 +218,7 @@ def list_packages():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/packages/<package_id>", methods=["GET"])
+@app.route("/api/packages/<package_id>", methods=["GET"])
 def get_package(package_id):
     """Retrieve a specific package by ID.
 
@@ -259,7 +259,7 @@ def get_package(package_id):
             return jsonify({"error": str(e)}), 500
 
 
-@app.route("/packages/<package_id>", methods=["DELETE"])
+@app.route("/api/packages/<package_id>", methods=["DELETE"])
 def delete_package(package_id):
     """Delete a package from the registry.
 
@@ -290,7 +290,7 @@ def delete_package(package_id):
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/packages/<package_id>/rate", methods=["GET"])
+@app.route("/api/packages/<package_id>/rate", methods=["GET"])
 def rate_package(package_id):
     """Calculate and return quality metrics for a package.
 
@@ -338,7 +338,7 @@ def rate_package(package_id):
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/ingest", methods=["POST"])
+@app.route("/api/ingest", methods=["POST"])
 def ingest_model():
     """Ingest and validate a HuggingFace model into the registry.
 
@@ -458,7 +458,7 @@ def ingest_model():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/ingest/upload", methods=["POST"])
+@app.route("/api/ingest/upload", methods=["POST"])
 def ingest_upload():
     """Ingest packages from uploaded CSV or JSON file.
 
@@ -642,7 +642,7 @@ def parse_json_content(content: str) -> list:
         raise ValueError(f"Invalid JSON format: {str(e)}")
 
 
-@app.route("/reset", methods=["DELETE"])
+@app.route("/api/reset", methods=["DELETE"])
 def reset_registry():
     """Reset the entire package registry.
 
@@ -666,7 +666,7 @@ def reset_registry():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/health/activity", methods=["GET"])
+@app.route("/api/health/activity", methods=["GET"])
 def health_activity():
     """Return operational activity metrics for the requested window."""
     try:
@@ -685,7 +685,7 @@ def health_activity():
     return jsonify(summary), 200
 
 
-@app.route("/health/logs", methods=["GET"])
+@app.route("/api/health/logs", methods=["GET"])
 def health_logs():
     """Return recent operational log entries."""
     try:
@@ -698,6 +698,29 @@ def health_logs():
 
     entries = storage.get_recent_logs(limit=limit, level=level)
     return jsonify({"entries": entries}), 200
+
+
+@app.route("/api/tracks", methods=["GET"])
+def get_tracks():
+    """Return the list of tracks the student plans to implement.
+
+    Returns:
+        tuple: JSON response with plannedTracks array and 200 status code
+            - plannedTracks (list): Array of track names the student plans to implement
+        Error (500): System error during retrieval
+    """
+    try:
+        return jsonify({
+            "plannedTracks": ["Access control track"]
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/tracks", methods=["GET"])
+def get_tracks_legacy():
+    """Backward-compatible route for /tracks endpoint (autograder compatibility)."""
+    return get_tracks()
 
 
 # Frontend page routes

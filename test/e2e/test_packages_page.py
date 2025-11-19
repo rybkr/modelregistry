@@ -52,7 +52,7 @@ def _wait_for_server_ready(timeout: float = 30.0) -> None:
 
     while time.time() < deadline:
         try:
-            response = requests.get(f"{BASE_URL}/health", headers=headers, timeout=1)
+            response = requests.get(f"{BASE_URL}/api/health", headers=headers, timeout=1)
             if response.status_code == 200:
                 return
         except requests.RequestException as exc:
@@ -68,9 +68,9 @@ def api_server() -> Iterator[str]:
     with _run_api_server():
         _wait_for_server_ready()
         # Ensure we start from a clean registry state
-        requests.delete(f"{BASE_URL}/reset", timeout=5)
+        requests.delete(f"{BASE_URL}/api/reset", timeout=5)
         yield BASE_URL
-        requests.delete(f"{BASE_URL}/reset", timeout=5)
+        requests.delete(f"{BASE_URL}/api/reset", timeout=5)
 
 
 @pytest.fixture
@@ -111,7 +111,7 @@ def _create_package(name: str, version: str, url: str) -> None:
             "readme": f"{name} README describing datasets and code examples.",
         },
     }
-    response = requests.post(f"{BASE_URL}/packages", json=payload, timeout=5)
+    response = requests.post(f"{BASE_URL}/api/packages", json=payload, timeout=5)
     response.raise_for_status()
 
 
