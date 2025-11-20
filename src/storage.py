@@ -32,8 +32,20 @@ class RegistryStorage:
         self.reset()
 
     def reset(self):
-        """Clear all packages from storage."""
-        self.packages.clear()
+        """Clear all packages and activity logs from storage.
+        
+        Performs a complete reset to initial state, clearing:
+        - All packages (artifacts)
+        - Activity logs
+        - Log entries
+        
+        This method is thread-safe and ensures complete cleanup.
+        """
+        with self._lock:
+            # Create a new empty dict to ensure complete reset
+            self.packages = {}
+            self._activity_log.clear()
+            self._log_entries.clear()
 
     def create_package(self, package: Package) -> Package:
         """Store a new package.
@@ -136,23 +148,77 @@ class RegistryStorage:
         Returns:
             tuple: (matching packages list, total count)
         """
-        matching_packages = []
-        
-        # Handle enumerate all case
-        enumerate_all = False
-        for query in queries:
-            if isinstance(query, dict) and query.get("name") == "*":
-                enumerate_all = True
-                break
-        
-        if enumerate_all:
-            # Return all packages
-            all_packages = list(self.packages.values())
-            # Filter by type if specified
-            if artifact_types:
+        with self._lock:
+            matching_packages = []
+            
+            # Handle enumerate all case
+            enumerate_all = False
+            for query in queries:
+                if isinstance(query, dict) and query.get("name") == "*":
+                    enumerate_all = True
+                    break
+            
+            if enumerate_all:
+                # Return all packages
+                all_packages = list(self.packages.values())
+                # Filter by type if specified
+                if artifact_types:
+                    filtered = []
+                    for pkg in all_packages:
+                        # Infer type from URL
+                        url = pkg.metadata.get("url", "")
+                        pkg_type = "model"
+                        if "huggingface.co/datasets/" in url:
+                            pkg_type = "dataset"
+                        elif "huggingface.co/spaces/" in url or "github.com" in url or "gitlab.com" in url:
+                            pkg_type = "code"
+                        if pkg_type in artifact_types:
+                            filtered.append(pkg)
+                    all_packages = filtered
+                matching_packages = all_packages
+            else:
+                # Process individual queries
+                for query in queries:
+                    if not isinstance(query, dict):
+                        continue
+                    query_name = query.get("name", "")
+                    # Per OpenAPI spec: ArtifactQuery uses 'types' (plural, array) not 'type' (singular)
+                    query_types = query.get("types", [])
+                    if not isinstance(query_types, list):
+                        query_types = []
+                    
+                    # Filter by name
+                    if query_name and query_name != "*":
+                        for pkg in self.packages.values():
+                            if query_name.lower() in pkg.name.lower():
+                                # Filter by types if specified
+                                if query_types:
+                                    url = pkg.metadata.get("url", "")
+                                    pkg_type = "model"
+                                    if "huggingface.co/datasets/" in url:
+                                        pkg_type = "dataset"
+                                    elif "huggingface.co/spaces/" in url or "github.com" in url or "gitlab.com" in url:
+                                        pkg_type = "code"
+                                    if pkg_type not in query_types:
+                                        continue
+                                if pkg not in matching_packages:
+                                    matching_packages.append(pkg)
+                    elif query_types:
+                        # Filter by types only (when name is "*" or empty)
+                        for pkg in self.packages.values():
+                            url = pkg.metadata.get("url", "")
+                            pkg_type = "model"
+                            if "huggingface.co/datasets/" in url:
+                                pkg_type = "dataset"
+                            elif "huggingface.co/spaces/" in url or "github.com" in url or "gitlab.com" in url:
+                                pkg_type = "code"
+                            if pkg_type in query_types and pkg not in matching_packages:
+                                matching_packages.append(pkg)
+            
+            # Apply type filter if provided
+            if artifact_types and not enumerate_all:
                 filtered = []
-                for pkg in all_packages:
-                    # Infer type from URL
+                for pkg in matching_packages:
                     url = pkg.metadata.get("url", "")
                     pkg_type = "model"
                     if "huggingface.co/datasets/" in url:
@@ -161,69 +227,16 @@ class RegistryStorage:
                         pkg_type = "code"
                     if pkg_type in artifact_types:
                         filtered.append(pkg)
-                all_packages = filtered
-            matching_packages = all_packages
-        else:
-            # Process individual queries
-            for query in queries:
-                if not isinstance(query, dict):
-                    continue
-                query_name = query.get("name", "")
-                # Per OpenAPI spec: ArtifactQuery uses 'types' (plural, array) not 'type' (singular)
-                query_types = query.get("types", [])
-                if not isinstance(query_types, list):
-                    query_types = []
-                
-                # Filter by name
-                if query_name and query_name != "*":
-                    for pkg in self.packages.values():
-                        if query_name.lower() in pkg.name.lower():
-                            # Filter by types if specified
-                            if query_types:
-                                url = pkg.metadata.get("url", "")
-                                pkg_type = "model"
-                                if "huggingface.co/datasets/" in url:
-                                    pkg_type = "dataset"
-                                elif "huggingface.co/spaces/" in url or "github.com" in url or "gitlab.com" in url:
-                                    pkg_type = "code"
-                                if pkg_type not in query_types:
-                                    continue
-                            if pkg not in matching_packages:
-                                matching_packages.append(pkg)
-                elif query_types:
-                    # Filter by types only (when name is "*" or empty)
-                    for pkg in self.packages.values():
-                        url = pkg.metadata.get("url", "")
-                        pkg_type = "model"
-                        if "huggingface.co/datasets/" in url:
-                            pkg_type = "dataset"
-                        elif "huggingface.co/spaces/" in url or "github.com" in url or "gitlab.com" in url:
-                            pkg_type = "code"
-                        if pkg_type in query_types and pkg not in matching_packages:
-                            matching_packages.append(pkg)
-        
-        # Apply type filter if provided
-        if artifact_types and not enumerate_all:
-            filtered = []
-            for pkg in matching_packages:
-                url = pkg.metadata.get("url", "")
-                pkg_type = "model"
-                if "huggingface.co/datasets/" in url:
-                    pkg_type = "dataset"
-                elif "huggingface.co/spaces/" in url or "github.com" in url or "gitlab.com" in url:
-                    pkg_type = "code"
-                if pkg_type in artifact_types:
-                    filtered.append(pkg)
-            matching_packages = filtered
-        
-        total_count = len(matching_packages)
-        
-        # Apply pagination
-        start_idx = min(offset, total_count)
-        end_idx = min(offset + limit, total_count)
-        paginated = matching_packages[start_idx:end_idx]
-        
-        return paginated, total_count
+                matching_packages = filtered
+            
+            total_count = len(matching_packages)
+            
+            # Apply pagination
+            start_idx = min(offset, total_count)
+            end_idx = min(offset + limit, total_count)
+            paginated = matching_packages[start_idx:end_idx]
+            
+            return paginated, total_count
 
     def get_artifact_by_type_and_id(self, artifact_type: str, artifact_id: str) -> Optional[Package]:
         """Retrieve package by ID, optionally validating type.

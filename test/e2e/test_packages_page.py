@@ -173,4 +173,3 @@ def test_model_packages_page_lists_and_filters_packages(browser: webdriver.Chrom
     browser.find_element(By.CSS_SELECTOR, "#search-form button[type='submit']").click()
 
     _wait_for_no_results(browser)
-
