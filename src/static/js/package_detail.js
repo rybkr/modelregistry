@@ -90,6 +90,7 @@ async function handleRate() {
     
     rateBtn.disabled = true;
     rateBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Rating...';
+    rateBtn.setAttribute('aria-busy', 'true');
 
     try {
         const metrics = await apiClient.ratePackage(currentPackageId);
@@ -100,6 +101,7 @@ async function handleRate() {
     } finally {
         rateBtn.disabled = false;
         rateBtn.innerHTML = originalText;
+        rateBtn.removeAttribute('aria-busy');
     }
 }
 
@@ -151,7 +153,12 @@ function displayMetrics(metrics) {
  * Handle delete button click
  */
 async function handleDelete() {
-    if (!confirm('Are you sure you want to delete this package? This action cannot be undone.')) {
+    const confirmed = await showConfirmDialog(
+        'Are you sure you want to delete this package? This action cannot be undone.',
+        'Delete Package'
+    );
+    
+    if (!confirmed) {
         return;
     }
 
@@ -160,6 +167,7 @@ async function handleDelete() {
     
     deleteBtn.disabled = true;
     deleteBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Deleting...';
+    deleteBtn.setAttribute('aria-busy', 'true');
 
     try {
         await apiClient.deletePackage(currentPackageId);
@@ -171,6 +179,7 @@ async function handleDelete() {
         showAlert(`Failed to delete package: ${error.message}`, 'danger');
         deleteBtn.disabled = false;
         deleteBtn.innerHTML = originalText;
+        deleteBtn.removeAttribute('aria-busy');
     }
 }
 
@@ -178,6 +187,7 @@ async function handleDelete() {
  * Escape HTML to prevent XSS
  */
 function escapeHtml(text) {
+    if (typeof text !== 'string') return text;
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;

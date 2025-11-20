@@ -13,11 +13,11 @@
         </nav>
 
         <!-- Loading indicator -->
-        <div id="loading-indicator" class="text-center py-5" role="status" aria-live="polite">
-            <div class="spinner-border text-primary" role="status">
+        <div id="loading-indicator" class="text-center py-5" role="status" aria-live="polite" aria-label="Loading package details">
+            <div class="spinner-border text-primary" role="status" aria-hidden="true">
                 <span class="visually-hidden">Loading package details...</span>
             </div>
-            <p class="mt-2">Loading package details...</p>
+            <p class="mt-2" aria-live="polite">Loading package details...</p>
         </div>
 
         <!-- Package Details -->
@@ -73,24 +73,24 @@
             </div>
 
             <!-- Metrics Card -->
-            <div class="card mb-4" id="metrics-card" style="display: none;">
+            <div class="card mb-4" id="metrics-card" style="display: none;" role="region" aria-labelledby="metrics-title">
                 <div class="card-header">
-                    <h3 class="h5 mb-0">Quality Metrics</h3>
+                    <h3 class="h5 mb-0" id="metrics-title">Quality Metrics</h3>
                 </div>
                 <div class="card-body">
-                    <div id="metrics-content">
+                    <div id="metrics-content" role="region" aria-live="polite" aria-label="Package quality metrics">
                         <!-- Metrics will be populated by JavaScript -->
                     </div>
                 </div>
             </div>
 
             <!-- Metadata Card -->
-            <div class="card">
+            <div class="card" role="region" aria-labelledby="metadata-title">
                 <div class="card-header">
-                    <h3 class="h5 mb-0">Metadata</h3>
+                    <h3 class="h5 mb-0" id="metadata-title">Metadata</h3>
                 </div>
                 <div class="card-body">
-                    <pre id="package-metadata" class="bg-light p-3 rounded"></pre>
+                    <pre id="package-metadata" class="bg-light p-3 rounded" role="region" aria-label="Package metadata in JSON format"></pre>
                 </div>
             </div>
         </div>

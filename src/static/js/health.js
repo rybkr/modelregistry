@@ -223,11 +223,21 @@ async function loadLogData(showSpinner = false) {
  * Handle reset registry button click
  */
 async function handleReset() {
-    if (!confirm('Are you sure you want to reset the registry? This will delete ALL packages and cannot be undone.')) {
+    const firstConfirm = await showConfirmDialog(
+        'Are you sure you want to reset the registry? This will delete ALL packages and cannot be undone.',
+        'Reset Registry - Warning'
+    );
+    
+    if (!firstConfirm) {
         return;
     }
 
-    if (!confirm('This is your last chance. Are you absolutely sure?')) {
+    const secondConfirm = await showConfirmDialog(
+        'This is your last chance. Are you absolutely sure you want to delete ALL packages?',
+        'Reset Registry - Final Confirmation'
+    );
+    
+    if (!secondConfirm) {
         return;
     }
 
@@ -236,6 +246,7 @@ async function handleReset() {
     
     resetBtn.disabled = true;
     resetBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Resetting...';
+    resetBtn.setAttribute('aria-busy', 'true');
 
     try {
         await apiClient.resetRegistry();
@@ -252,6 +263,7 @@ async function handleReset() {
         showAlert(`Failed to reset registry: ${error.message}`, 'danger');
         resetBtn.disabled = false;
         resetBtn.innerHTML = originalText;
+        resetBtn.removeAttribute('aria-busy');
     }
 }
 
