@@ -16,7 +16,7 @@
     z-index: 9999;
 }
 
-/* Ensure sufficient color contrast - WCAG 2.1 AA compliant */
+/* Ensure sufficient color contrast - WCAG 2.1  AA compliant */
 .text-muted {
     color: #6c757d !important; /* Meets WCAG AA for normal text (4.5:1 contrast ratio) */
 }
