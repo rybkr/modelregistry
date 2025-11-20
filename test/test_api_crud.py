@@ -70,7 +70,17 @@ def test_reset_registry(client):
     package_data = {"name": "test-model", "version": "1.0.0"}
     client.post("/api/packages", json=package_data)
 
-    response = client.delete("/api/reset")
+    # Authenticate to get token (required by OpenAPI spec)
+    auth_data = {
+        "user": {"name": "ece30861defaultadminuser", "is_admin": True},
+        "secret": {"password": "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE artifacts;"}
+    }
+    auth_response = client.put("/api/authenticate", json=auth_data)
+    assert auth_response.status_code == 200
+    token = auth_response.get_json()  # Token is returned as JSON string
+
+    # Call reset with authentication header
+    response = client.delete("/api/reset", headers={"X-Authorization": token})
     assert response.status_code == 200
 
     list_response = client.get("/api/packages")
