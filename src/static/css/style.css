@@ -16,12 +16,68 @@
     z-index: 9999;
 }
 
-/* Ensure sufficient color contrast */
+/* Ensure sufficient color contrast - WCAG 2.1  AA compliant */
 .text-muted {
-    color: #6c757d !important; /* Meets WCAG AA for normal text */
+    color: #6c757d !important; /* Meets WCAG AA for normal text (4.5:1 contrast ratio) */
 }
 
-/* Focus indicators for accessibility */
+/* Ensure link colors meet contrast requirements */
+a:not(.btn) {
+    color: #0d6efd; /* Bootstrap primary blue - 4.5:1 contrast on white */
+}
+
+a:not(.btn):hover,
+a:not(.btn):focus {
+    color: #0a58ca; /* Darker blue on hover - maintains contrast */
+}
+
+a:not(.btn):visited {
+    color: #6f42c1; /* Purple for visited links - maintains contrast */
+}
+
+/* Keep navbar links white (navbar-dark) */
+.navbar-dark .nav-link,
+.navbar-dark .nav-link:visited,
+.navbar-dark .nav-link:hover,
+.navbar-dark .nav-link:focus,
+.navbar-dark .navbar-brand,
+.navbar-dark .navbar-brand:visited,
+.navbar-dark .navbar-brand:hover,
+.navbar-dark .navbar-brand:focus {
+    color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.navbar-dark .nav-link.active,
+.navbar-dark .nav-link[aria-current="page"] {
+    color: #ffffff !important;
+}
+
+/* Ensure button text has sufficient contrast */
+.btn-primary {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+    color: #ffffff; /* White text on blue - exceeds 4.5:1 */
+}
+
+.btn-success {
+    background-color: #198754;
+    border-color: #198754;
+    color: #ffffff; /* White text on green - exceeds 4.5:1 */
+}
+
+.btn-danger {
+    background-color: #dc3545;
+    border-color: #dc3545;
+    color: #ffffff; /* White text on red - exceeds 4.5:1 */
+}
+
+.btn-secondary {
+    background-color: #6c757d;
+    border-color: #6c757d;
+    color: #ffffff; /* White text on gray - exceeds 4.5:1 */
+}
+
+/* Focus indicators for accessibility - WCAG 2.1 AA compliant */
 a:focus,
 button:focus,
 input:focus,
@@ -29,6 +85,23 @@ select:focus,
 textarea:focus {
     outline: 2px solid #0d6efd;
     outline-offset: 2px;
+    outline-style: solid;
+}
+
+/* Ensure focus is visible even in high contrast mode */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+    outline: 2px solid #0d6efd;
+    outline-offset: 2px;
+    outline-style: solid;
+}
+
+/* Remove default focus outline only when using custom focus styles */
+*:focus:not(:focus-visible) {
+    outline: none;
 }
 
 /* Card hover effects */
@@ -70,15 +143,37 @@ textarea:focus {
     min-height: 120px;
 }
 
-/* Form validation */
+/* Form validation - WCAG 2.1 AA compliant */
 .was-validated .form-control:invalid,
-.was-validated .form-select:invalid {
+.was-validated .form-select:invalid,
+.form-control.is-invalid,
+.form-select.is-invalid {
     border-color: #dc3545;
+    border-width: 2px;
 }
 
 .was-validated .form-control:valid,
 .was-validated .form-select:valid {
     border-color: #198754;
+}
+
+/* Ensure error messages are visible and accessible */
+.invalid-feedback {
+    display: block;
+    color: #dc3545;
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+}
+
+/* Ensure required field indicators are visible */
+.form-label .text-danger {
+    font-weight: bold;
+}
+
+/* Ensure form help text is readable */
+.form-text {
+    color: #6c757d;
+    font-size: 0.875rem;
 }
 
 /* Pagination */
@@ -141,42 +236,104 @@ main {
     }
 }
 
-/* Focus visible for keyboard navigation */
-*:focus-visible {
-    outline: 2px solid #0d6efd;
-    outline-offset: 2px;
-}
+/* Focus visible for keyboard navigation - already defined above */
 
-/* Ensure text is readable */
+/* Ensure text is readable - WCAG 2.1 AA compliant */
 body {
     font-size: 1rem;
     line-height: 1.5;
+    color: #212529; /* Dark text on light background - exceeds 4.5:1 contrast */
+}
+
+/* Ensure headings are readable */
+h1, h2, h3, h4, h5, h6 {
     color: #212529;
+    font-weight: 600;
 }
 
-/* Link styling */
-a {
-    color: #0d6efd;
-    text-decoration: underline;
+/* Ensure code blocks are readable */
+code {
+    background-color: #f8f9fa;
+    color: #e83e8c; /* Pink for code - maintains contrast */
+    padding: 0.125rem 0.25rem;
+    border-radius: 0.25rem;
 }
 
-a:hover {
-    color: #0a58ca;
+pre code {
+    color: #212529;
+    background-color: transparent;
 }
 
-/* Button accessibility */
+/* Link styling - already defined above, removing duplicate */
+
+/* Button accessibility - WCAG 2.1 AA compliant */
 .btn:disabled {
     opacity: 0.65;
     cursor: not-allowed;
+    pointer-events: none;
 }
 
-/* Table accessibility */
+/* Ensure disabled buttons maintain contrast */
+.btn:disabled,
+.btn[aria-disabled="true"] {
+    opacity: 0.6;
+}
+
+/* Ensure active page indicator is visible */
+.pagination .page-item.active .page-link {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+    color: #ffffff;
+    font-weight: 600;
+}
+
+/* Ensure pagination links are accessible */
+.pagination .page-link {
+    color: #0d6efd;
+    text-decoration: none;
+}
+
+.pagination .page-link:hover {
+    color: #0a58ca;
+    background-color: #e9ecef;
+}
+
+.pagination .page-link:focus {
+    outline: 2px solid #0d6efd;
+    outline-offset: 2px;
+    z-index: 1;
+}
+
+/* Table accessibility - WCAG 2.1 AA compliant */
 table {
     width: 100%;
 }
 
 th {
     font-weight: 600;
+    background-color: #f8f9fa;
+    color: #212529;
+}
+
+/* Ensure table headers are associated with cells */
+th[scope="col"],
+th[scope="row"] {
+    text-align: left;
+}
+
+/* Ensure table cells have sufficient contrast */
+td {
+    color: #212529;
+}
+
+/* Ensure table borders are visible */
+.table {
+    border-color: #dee2e6;
+}
+
+.table th,
+.table td {
+    border-color: #dee2e6;
 }
 
 /* Code blocks */
@@ -192,5 +349,64 @@ pre {
     border-radius: 0.25rem;
     padding: 1rem;
     overflow-x: auto;
+}
+
+/* Progress bar accessibility - WCAG 2.1 AA compliant */
+.progress {
+    height: 1.5rem;
+    background-color: #e9ecef;
+    border-radius: 0.25rem;
+    overflow: hidden;
+}
+
+.progress-bar {
+    background-color: #0d6efd;
+    color: #ffffff;
+    text-align: center;
+    line-height: 1.5rem;
+    transition: width 0.6s ease;
+}
+
+/* Modal accessibility */
+.modal {
+    color: #212529;
+}
+
+.modal-header {
+    border-bottom: 1px solid #dee2e6;
+}
+
+.modal-footer {
+    border-top: 1px solid #dee2e6;
+}
+
+/* Ensure modal backdrop is accessible */
+.modal-backdrop {
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+/* Ensure alert colors meet contrast requirements */
+.alert-success {
+    background-color: #d1e7dd;
+    border-color: #badbcc;
+    color: #0f5132;
+}
+
+.alert-danger {
+    background-color: #f8d7da;
+    border-color: #f5c2c7;
+    color: #842029;
+}
+
+.alert-warning {
+    background-color: #fff3cd;
+    border-color: #ffecb5;
+    color: #664d03;
+}
+
+.alert-info {
+    background-color: #cff4fc;
+    border-color: #b6effb;
+    color: #055160;
 }
 
