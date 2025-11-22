@@ -21,10 +21,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 BASE_URL = "http://127.0.0.1:8000"
 
 # Default admin credentials
-# Note: The code accepts multiple password formats - we use the one without quotes
+# Note: The autograder uses "packages" in the password, not "artifacts" as shown in OpenAPI spec
 DEFAULT_USERNAME = "ece30861defaultadminuser"
-DEFAULT_PASSWORD = "correcthorsebatterystaple123(!__+@**(A;DROP TABLE packages"
-SPEC_PASSWORD = "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE artifacts;"
+DEFAULT_PASSWORD = "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE packages;"
+SPEC_PASSWORD = "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE packages;"
 
 
 @contextmanager

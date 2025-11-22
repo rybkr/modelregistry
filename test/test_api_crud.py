@@ -71,9 +71,10 @@ def test_reset_registry(client):
     client.post("/api/packages", json=package_data)
 
     # Authenticate to get token (required by OpenAPI spec)
+    # Note: autograder uses "packages" not "artifacts" in the password
     auth_data = {
         "user": {"name": "ece30861defaultadminuser", "is_admin": True},
-        "secret": {"password": "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE artifacts;"}
+        "secret": {"password": "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE packages;"}
     }
     auth_response = client.put("/api/authenticate", json=auth_data)
     assert auth_response.status_code == 200

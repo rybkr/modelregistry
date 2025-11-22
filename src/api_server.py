@@ -1497,6 +1497,7 @@ def ingest_page():
 
 
 @app.route("/dashboard/health", methods=["GET"])
+@app.route("/health/dashboard", methods=["GET"])
 def health_dashboard_redirect():
     """Backward-compatible alias for the health dashboard route."""
     return render_template("health.html")
