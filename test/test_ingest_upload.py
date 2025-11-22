@@ -31,7 +31,7 @@ package3,3.0.0,{}
     }
 
     response = client.post(
-        "/ingest/upload",
+        "/api/ingest/upload",
         content_type="multipart/form-data",
         data=data
     )
@@ -66,7 +66,7 @@ def test_upload_json_array_success(client):
     }
 
     response = client.post(
-        "/ingest/upload",
+        "/api/ingest/upload",
         content_type="multipart/form-data",
         data=data
     )
@@ -92,7 +92,7 @@ def test_upload_json_single_object_success(client):
     }
 
     response = client.post(
-        "/ingest/upload",
+        "/api/ingest/upload",
         content_type="multipart/form-data",
         data=data
     )
@@ -107,7 +107,7 @@ def test_upload_json_single_object_success(client):
 def test_upload_no_file_error(client):
     """Test error when no file is provided."""
     response = client.post(
-        "/ingest/upload",
+        "/api/ingest/upload",
         content_type="multipart/form-data",
         data={}
     )
@@ -124,7 +124,7 @@ def test_upload_empty_filename_error(client):
     }
 
     response = client.post(
-        "/ingest/upload",
+        "/api/ingest/upload",
         content_type="multipart/form-data",
         data=data
     )
@@ -141,7 +141,7 @@ def test_upload_invalid_file_type_error(client):
     }
 
     response = client.post(
-        "/ingest/upload",
+        "/api/ingest/upload",
         content_type="multipart/form-data",
         data=data
     )
@@ -164,7 +164,7 @@ package3,,{}
     }
 
     response = client.post(
-        "/ingest/upload",
+        "/api/ingest/upload",
         content_type="multipart/form-data",
         data=data
     )
@@ -196,7 +196,7 @@ def test_upload_json_missing_required_fields(client):
     }
 
     response = client.post(
-        "/ingest/upload",
+        "/api/ingest/upload",
         content_type="multipart/form-data",
         data=data
     )
@@ -218,7 +218,7 @@ def test_upload_empty_csv_error(client):
     }
 
     response = client.post(
-        "/ingest/upload",
+        "/api/ingest/upload",
         content_type="multipart/form-data",
         data=data
     )
@@ -237,7 +237,7 @@ def test_upload_empty_json_array_error(client):
     }
 
     response = client.post(
-        "/ingest/upload",
+        "/api/ingest/upload",
         content_type="multipart/form-data",
         data=data
     )
@@ -256,7 +256,7 @@ def test_upload_invalid_json_error(client):
     }
 
     response = client.post(
-        "/ingest/upload",
+        "/api/ingest/upload",
         content_type="multipart/form-data",
         data=data
     )
@@ -278,7 +278,7 @@ package2,2.0.0
     }
 
     response = client.post(
-        "/ingest/upload",
+        "/api/ingest/upload",
         content_type="multipart/form-data",
         data=data
     )
@@ -304,7 +304,7 @@ def test_upload_json_without_metadata(client):
     }
 
     response = client.post(
-        "/ingest/upload",
+        "/api/ingest/upload",
         content_type="multipart/form-data",
         data=data
     )
@@ -327,7 +327,7 @@ stored-package,5.0.0,"{""key"": ""value""}"
     }
 
     response = client.post(
-        "/ingest/upload",
+        "/api/ingest/upload",
         content_type="multipart/form-data",
         data=data
     )
@@ -336,7 +336,7 @@ stored-package,5.0.0,"{""key"": ""value""}"
     package_id = response.get_json()["packages"][0]["id"]
 
     # Verify package can be retrieved
-    get_response = client.get(f"/packages/{package_id}")
+    get_response = client.get(f"/api/packages/{package_id}")
     assert get_response.status_code == 200
 
     package_data = get_response.get_json()
@@ -357,7 +357,7 @@ package2,,{}
     }
 
     response = client.post(
-        "/ingest/upload",
+        "/api/ingest/upload",
         content_type="multipart/form-data",
         data=data
     )

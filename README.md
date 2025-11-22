@@ -40,12 +40,12 @@ The server will start on `http://localhost:8000`
 
 ### API Endpoints
 
-- `GET /health` - Health check
-- `POST /packages` - Upload a package
-- `GET /packages` - List all packages
-- `GET /packages/<id>` - Get a specific package
-- `DELETE /packages/<id>` - Delete a package
-- `DELETE /reset` - Reset registry to default state
+- `GET /api/health` - Health check
+- `POST /api/packages` - Upload a package
+- `GET /api/packages` - List all packages
+- `GET /api/packages/<id>` - Get a specific package
+- `DELETE /api/packages/<id>` - Delete a package
+- `DELETE /api/reset` - Reset registry to default state
 
 ### Running Tests
 ```bash
