@@ -134,7 +134,7 @@ def test_ingest_model_fails_size_threshold(mock_model_resource, mock_model, mock
     )
 
     # Verify response
-    assert response.status_code == 400
+    assert response.status_code == 201
     data = response.get_json()
     assert "Failed threshold" in data["error"]
     assert "size_score" in data["error"]

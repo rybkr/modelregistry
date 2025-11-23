@@ -1549,6 +1549,9 @@ def get_artifact_cost(artifact_type, artifact_id):
 def get_artifact_lineage(artifact_id):
     """Get lineage graph for model artifact.
     
+    Extracts lineage information from model's config.json and matches
+    against models currently in the system.
+    
     Returns:
         tuple: (ArtifactLineageGraph JSON, 200) or error response
     """
@@ -1566,22 +1569,138 @@ def get_artifact_lineage(artifact_id):
     if not package:
         return jsonify({"error": "Artifact not found"}), 404
     
-    # Extract lineage from metadata or return empty graph
-    lineage = package.metadata.get("lineage", {})
-    if not lineage or not isinstance(lineage, dict):
-        # Return empty lineage graph
-        lineage = {
-            "nodes": [],
-            "edges": [],
+    url = package.metadata.get("url", "")
+    if not url:
+        return jsonify({"error": "No URL in package metadata"}), 400
+    
+    try:
+        # Build lineage graph from config.json
+        model = Model(model=ModelResource(url=url))
+        nodes = []
+        edges = []
+        
+        # Add current model as a node
+        current_node = {
+            "artifact_id": artifact_id,
+            "name": package.name,
+            "source": "config_json"
         }
-    
-    # Ensure it has nodes and edges
-    if "nodes" not in lineage:
-        lineage["nodes"] = []
-    if "edges" not in lineage:
-        lineage["edges"] = []
-    
-    return jsonify(lineage), 200
+        nodes.append(current_node)
+        
+        # Try to read config.json to extract lineage information
+        try:
+            with model.model.open_files(allow_patterns=["config.json"]) as repo:
+                if repo.exists("config.json"):
+                    config = repo.read_json("config.json")
+                    
+                    # Extract base model information
+                    # Common fields: _name_or_path, base_model, model_type, architectures
+                    base_model_path = None
+                    if "_name_or_path" in config:
+                        base_model_path = config["_name_or_path"]
+                    elif "base_model" in config:
+                        base_model_path = config["base_model"]
+                    
+                    # Search for base model in storage
+                    if base_model_path:
+                        # Try to find matching model in storage
+                        # base_model_path could be like "bert-base-uncased" or full URL
+                        found_parent = None
+                        
+                        # Search all packages for matching URL or name
+                        # Get all packages (use large limit to get all)
+                        all_packages = storage.list_packages(offset=0, limit=10000)
+                        for pkg in all_packages:
+                            pkg_url = pkg.metadata.get("url", "")
+                            pkg_name = pkg.name.lower()
+                            
+                            # Check if base_model_path matches the package URL or name
+                            base_model_lower = base_model_path.lower()
+                            
+                            # Match by URL (e.g., "bert-base-uncased" in "https://huggingface.co/bert-base-uncased")
+                            if pkg_url and base_model_lower in pkg_url.lower():
+                                found_parent = pkg
+                                break
+                            
+                            # Match by name (e.g., "bert-base-uncased" matches package name)
+                            if pkg_name and base_model_lower in pkg_name:
+                                found_parent = pkg
+                                break
+                        
+                        if found_parent:
+                            # Add parent model as node
+                            parent_node = {
+                                "artifact_id": found_parent.id,
+                                "name": found_parent.name,
+                                "source": "config_json"
+                            }
+                            # Avoid duplicate nodes
+                            if not any(n["artifact_id"] == found_parent.id for n in nodes):
+                                nodes.append(parent_node)
+                            
+                            # Add edge from parent to current model
+                            edge = {
+                                "from_node_artifact_id": found_parent.id,
+                                "to_node_artifact_id": artifact_id,
+                                "relationship": "base_model"
+                            }
+                            edges.append(edge)
+                    
+                    # Check for dataset information in config
+                    # Some models mention datasets in config.json
+                    dataset_name = None
+                    if "dataset" in config:
+                        dataset_name = config["dataset"]
+                    elif "train_dataset" in config:
+                        dataset_name = config["train_dataset"]
+                    
+                    # Search for dataset in storage
+                    if dataset_name:
+                        all_packages = storage.list_packages(offset=0, limit=10000)
+                        for pkg in all_packages:
+                            pkg_url = pkg.metadata.get("url", "")
+                            pkg_name = pkg.name.lower()
+                            
+                            # Check if it's a dataset (URL contains /datasets/)
+                            if "huggingface.co/datasets/" in pkg_url.lower():
+                                dataset_lower = dataset_name.lower()
+                                
+                                # Match dataset by name or URL
+                                if dataset_lower in pkg_url.lower() or dataset_lower in pkg_name:
+                                    # Add dataset as node
+                                    dataset_node = {
+                                        "artifact_id": pkg.id,
+                                        "name": pkg.name,
+                                        "source": "upstream_dataset"
+                                    }
+                                    # Avoid duplicate nodes
+                                    if not any(n["artifact_id"] == pkg.id for n in nodes):
+                                        nodes.append(dataset_node)
+                                    
+                                    # Add edge from dataset to current model
+                                    edge = {
+                                        "from_node_artifact_id": pkg.id,
+                                        "to_node_artifact_id": artifact_id,
+                                        "relationship": "fine_tuning_dataset"
+                                    }
+                                    edges.append(edge)
+                                    break
+                    
+        except Exception as e:
+            # If config.json can't be read, return graph with just current node
+            logger.warning(f"Could not read config.json for lineage: {str(e)}")
+        
+        # Build lineage graph response
+        lineage = {
+            "nodes": nodes,
+            "edges": edges
+        }
+        
+        return jsonify(lineage), 200
+        
+    except Exception as e:
+        logger.error(f"Error building lineage graph: {str(e)}")
+        return jsonify({"error": f"Failed to build lineage graph: {str(e)}"}), 400
 
 
 @app.route("/api/artifact/model/<artifact_id>/license-check", methods=["POST"])
