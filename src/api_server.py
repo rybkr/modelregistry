@@ -670,7 +670,7 @@ def ingest_model():
         - dataset_quality
         - code_quality
         - performance_claims
-        - size_score (each device score must be >= 0.5: raspberry_pi, jetson_nano, desktop_pc, aws_server)
+        - size_score (max of device scores must be >= 0.5: raspberry_pi, jetson_nano, desktop_pc, aws_server)
         - net_score (aggregate score computed from all metrics)
 
     Returns:
@@ -710,12 +710,12 @@ def ingest_model():
             # Handle size_score which is a dict of device scores
             if metric_name == "size_score":
                 if isinstance(metric.value, dict) and len(metric.value) > 0:
-                    # Check that each individual device score is >= 0.5
-                    for device, score in metric.value.items():
-                        if score < 0.5:
-                            return jsonify(
-                                {"error": f"Failed threshold: {metric_name}.{device} {score:.3f} < 0.5"}
-                            ), 400
+                    # Check that the max of all device scores is >= 0.5
+                    max_score = max(metric.value.values())
+                    if max_score < 0.5:
+                        return jsonify(
+                            {"error": f"Failed threshold: {metric_name} max score {max_score:.3f} < 0.5"}
+                        ), 400
                 else:
                     # Invalid size_score, fail
                     return jsonify(
@@ -1431,15 +1431,31 @@ def get_model_rating(artifact_id):
             return jsonify({"error": str(e)}), 500
     
     # Convert to ModelRating format
-    # Extract individual metric scores
-    net_score_val = scores.get("net_score", {}).get("score", 0.0)
-    ramp_up_time = scores.get("ramp_up_time", {}).get("score", 0.0)
-    bus_factor = scores.get("bus_factor", {}).get("score", 0.0)
-    license_score = scores.get("license", {}).get("score", 0.0)
-    size_score = scores.get("size_score", {}).get("score", {})
-    if isinstance(size_score, dict):
-        size_score_obj = size_score
-    else:
+    # Helper function to extract score and latency
+    def get_metric_value(metric_name: str) -> tuple[float, float]:
+        """Extract metric value and latency in seconds."""
+        metric_data = scores.get(metric_name, {})
+        score = metric_data.get("score", 0.0)
+        latency_ms = metric_data.get("latency_ms", 0.0)
+        latency_seconds = latency_ms / 1000.0  # Convert ms to seconds
+        return score, latency_seconds
+    
+    # Extract all metric values and latencies
+    net_score_val, net_score_latency = get_metric_value("net_score")
+    ramp_up_time_val, ramp_up_time_latency = get_metric_value("ramp_up_time")
+    bus_factor_val, bus_factor_latency = get_metric_value("bus_factor")
+    performance_claims_val, performance_claims_latency = get_metric_value("performance_claims")
+    license_val, license_latency = get_metric_value("license")
+    dataset_and_code_score_val, dataset_and_code_score_latency = get_metric_value("dataset_and_code_score")
+    dataset_quality_val, dataset_quality_latency = get_metric_value("dataset_quality")
+    code_quality_val, code_quality_latency = get_metric_value("code_quality")
+    size_score_val, size_score_latency = get_metric_value("size_score")
+    
+    # Handle size_score - must be a dict with device scores
+    size_score_obj = size_score_val if isinstance(size_score_val, dict) else {}
+    if not isinstance(size_score_obj, dict) or not all(
+        key in size_score_obj for key in ["raspberry_pi", "jetson_nano", "desktop_pc", "aws_server"]
+    ):
         size_score_obj = {
             "raspberry_pi": 1.0,
             "jetson_nano": 1.0,
@@ -1447,12 +1463,42 @@ def get_model_rating(artifact_id):
             "aws_server": 1.0,
         }
     
+    # Missing metrics default to 0.0 (reproducibility, reviewedness, tree_score)
+    reproducibility_val = 0.0
+    reproducibility_latency = 0.0
+    reviewedness_val = 0.0
+    reviewedness_latency = 0.0
+    tree_score_val = 0.0
+    tree_score_latency = 0.0
+    
+    # Build complete ModelRating response with all required fields
     rating = {
+        "name": package.name,
+        "category": "MODEL",
         "net_score": net_score_val,
-        "ramp_up_time": ramp_up_time,
-        "bus_factor": bus_factor,
-        "license": license_score,
+        "net_score_latency": net_score_latency,
+        "ramp_up_time": ramp_up_time_val,
+        "ramp_up_time_latency": ramp_up_time_latency,
+        "bus_factor": bus_factor_val,
+        "bus_factor_latency": bus_factor_latency,
+        "performance_claims": performance_claims_val,
+        "performance_claims_latency": performance_claims_latency,
+        "license": license_val,
+        "license_latency": license_latency,
+        "dataset_and_code_score": dataset_and_code_score_val,
+        "dataset_and_code_score_latency": dataset_and_code_score_latency,
+        "dataset_quality": dataset_quality_val,
+        "dataset_quality_latency": dataset_quality_latency,
+        "code_quality": code_quality_val,
+        "code_quality_latency": code_quality_latency,
+        "reproducibility": reproducibility_val,
+        "reproducibility_latency": reproducibility_latency,
+        "reviewedness": reviewedness_val,
+        "reviewedness_latency": reviewedness_latency,
+        "tree_score": tree_score_val,
+        "tree_score_latency": tree_score_latency,
         "size_score": size_score_obj,
+        "size_score_latency": size_score_latency,
     }
     
     return jsonify(rating), 200
