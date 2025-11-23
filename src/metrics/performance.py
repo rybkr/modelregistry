@@ -47,7 +47,18 @@ def _query_genai(prompt: str, model: str = "llama3.1:latest") -> Dict[str, Any]:
 
     resp = requests.post(url, headers=headers, json=body, timeout=30)
     resp.raise_for_status()
-    content = resp.json()["choices"][0]["message"]["content"].strip()
+    resp_data = resp.json()
+    
+    # Check if choices array exists and has at least one element
+    if "choices" not in resp_data or len(resp_data["choices"]) == 0:
+        raise ValueError("API response missing choices or choices array is empty")
+    
+    # Check if message exists in the first choice
+    first_choice = resp_data["choices"][0]
+    if "message" not in first_choice or "content" not in first_choice["message"]:
+        raise ValueError("API response missing message or content in choices[0]")
+    
+    content = first_choice["message"]["content"].strip()
 
     try:
         parsed = json.loads(content)

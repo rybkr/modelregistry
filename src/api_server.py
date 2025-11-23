@@ -12,6 +12,7 @@ import logging
 import zipfile
 import tempfile
 from pathlib import Path
+from urllib.parse import urlparse
 
 from registry_models import Package
 from storage import storage
@@ -1603,8 +1604,25 @@ def get_artifact_lineage(artifact_id):
                     
                     # Search for base model in storage
                     if base_model_path:
+                        # Extract model identifier from base_model_path
+                        # It could be a full URL or just a model name/org/model
+                        base_model_id = base_model_path
+                        if "huggingface.co" in base_model_path.lower():
+                            # Extract model ID from URL (e.g., "https://huggingface.co/google/bert-base-uncased" -> "google/bert-base-uncased" or "bert-base-uncased")
+                            parsed = urlparse(base_model_path)
+                            path_parts = [x for x in parsed.path.strip("/").split("/") if x]
+                            if len(path_parts) >= 2:
+                                base_model_id = f"{path_parts[0]}/{path_parts[1]}"
+                            elif len(path_parts) == 1:
+                                base_model_id = path_parts[0]
+                        elif "/" in base_model_path:
+                            # Already in org/model format
+                            base_model_id = base_model_path
+                        else:
+                            # Just model name
+                            base_model_id = base_model_path
+                        
                         # Try to find matching model in storage
-                        # base_model_path could be like "bert-base-uncased" or full URL
                         found_parent = None
                         
                         # Search all packages for matching URL or name
@@ -1614,18 +1632,33 @@ def get_artifact_lineage(artifact_id):
                             pkg_url = pkg.metadata.get("url", "")
                             pkg_name = pkg.name.lower()
                             
-                            # Check if base_model_path matches the package URL or name
-                            base_model_lower = base_model_path.lower()
+                            # Extract model ID from package URL for comparison
+                            pkg_model_id = None
+                            if pkg_url and "huggingface.co" in pkg_url.lower():
+                                parsed = urlparse(pkg_url)
+                                path_parts = [x for x in parsed.path.strip("/").split("/") if x]
+                                if len(path_parts) >= 2:
+                                    pkg_model_id = f"{path_parts[0]}/{path_parts[1]}"
+                                elif len(path_parts) == 1:
+                                    pkg_model_id = path_parts[0]
                             
-                            # Match by URL (e.g., "bert-base-uncased" in "https://huggingface.co/bert-base-uncased")
-                            if pkg_url and base_model_lower in pkg_url.lower():
+                            # Match by extracted model ID (exact match)
+                            if pkg_model_id and base_model_id.lower() == pkg_model_id.lower():
                                 found_parent = pkg
                                 break
                             
-                            # Match by name (e.g., "bert-base-uncased" matches package name)
-                            if pkg_name and base_model_lower in pkg_name:
+                            # Match by model name only (if base_model_id is just a name)
+                            if "/" not in base_model_id and pkg_name and base_model_id.lower() == pkg_name:
                                 found_parent = pkg
                                 break
+                            
+                            # Fallback: match if base model name is in package URL (for partial matches)
+                            base_model_name = base_model_id.split("/")[-1].lower() if "/" in base_model_id else base_model_id.lower()
+                            if pkg_url and base_model_name in pkg_url.lower() and "huggingface.co" in pkg_url.lower():
+                                # Additional check: make sure it's not a false positive
+                                if base_model_name in pkg_url.lower().split("/")[-1]:
+                                    found_parent = pkg
+                                    break
                         
                         if found_parent:
                             # Add parent model as node
@@ -1656,6 +1689,20 @@ def get_artifact_lineage(artifact_id):
                     
                     # Search for dataset in storage
                     if dataset_name:
+                        # Extract dataset identifier (could be a name or URL)
+                        dataset_id = dataset_name
+                        if "huggingface.co" in dataset_name.lower():
+                            # Extract dataset ID from URL
+                            parsed = urlparse(dataset_name)
+                            path_parts = [x for x in parsed.path.strip("/").split("/") if x]
+                            # Skip "datasets" part if present
+                            if path_parts and path_parts[0] == "datasets":
+                                path_parts = path_parts[1:]
+                            if len(path_parts) >= 2:
+                                dataset_id = f"{path_parts[0]}/{path_parts[1]}"
+                            elif len(path_parts) == 1:
+                                dataset_id = path_parts[0]
+                        
                         all_packages = storage.list_packages(offset=0, limit=10000)
                         for pkg in all_packages:
                             pkg_url = pkg.metadata.get("url", "")
@@ -1663,10 +1710,42 @@ def get_artifact_lineage(artifact_id):
                             
                             # Check if it's a dataset (URL contains /datasets/)
                             if "huggingface.co/datasets/" in pkg_url.lower():
-                                dataset_lower = dataset_name.lower()
+                                # Extract dataset ID from package URL
+                                parsed = urlparse(pkg_url)
+                                path_parts = [x for x in parsed.path.strip("/").split("/") if x]
+                                # Skip "datasets" part
+                                if path_parts and path_parts[0] == "datasets":
+                                    path_parts = path_parts[1:]
+                                pkg_dataset_id = None
+                                if len(path_parts) >= 2:
+                                    pkg_dataset_id = f"{path_parts[0]}/{path_parts[1]}"
+                                elif len(path_parts) == 1:
+                                    pkg_dataset_id = path_parts[0]
                                 
-                                # Match dataset by name or URL
-                                if dataset_lower in pkg_url.lower() or dataset_lower in pkg_name:
+                                # Match by extracted dataset ID (exact match preferred)
+                                dataset_id_lower = dataset_id.lower()
+                                if pkg_dataset_id and dataset_id_lower == pkg_dataset_id.lower():
+                                    # Add dataset as node
+                                    dataset_node = {
+                                        "artifact_id": pkg.id,
+                                        "name": pkg.name,
+                                        "source": "upstream_dataset"
+                                    }
+                                    # Avoid duplicate nodes
+                                    if not any(n["artifact_id"] == pkg.id for n in nodes):
+                                        nodes.append(dataset_node)
+                                    
+                                    # Add edge from dataset to current model
+                                    edge = {
+                                        "from_node_artifact_id": pkg.id,
+                                        "to_node_artifact_id": artifact_id,
+                                        "relationship": "fine_tuning_dataset"
+                                    }
+                                    edges.append(edge)
+                                    break
+                                
+                                # Fallback: match by name if dataset_id is just a name
+                                if "/" not in dataset_id and dataset_id_lower == pkg_name:
                                     # Add dataset as node
                                     dataset_node = {
                                         "artifact_id": pkg.id,
@@ -1829,4 +1908,4 @@ def health_dashboard_redirect():
 if __name__ == "__main__":
     # Initialize default token on startup (system starts in reset state)
     initialize_default_token()
-    app.run(host="0.0.0.0", port=8000, debug=False)
+    app.run(host="0.0.0.0", port=8000, debug=True)
