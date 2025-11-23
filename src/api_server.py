@@ -12,6 +12,7 @@ import logging
 import zipfile
 import tempfile
 from pathlib import Path
+from urllib.parse import urlparse
 
 from registry_models import Package
 from storage import storage
@@ -670,7 +671,7 @@ def ingest_model():
         - dataset_quality
         - code_quality
         - performance_claims
-        - size_score (each device score must be >= 0.5: raspberry_pi, jetson_nano, desktop_pc, aws_server)
+        - size_score (max of device scores must be >= 0.5: raspberry_pi, jetson_nano, desktop_pc, aws_server)
         - net_score (aggregate score computed from all metrics)
 
     Returns:
@@ -710,12 +711,12 @@ def ingest_model():
             # Handle size_score which is a dict of device scores
             if metric_name == "size_score":
                 if isinstance(metric.value, dict) and len(metric.value) > 0:
-                    # Check that each individual device score is >= 0.5
-                    for device, score in metric.value.items():
-                        if score < 0.5:
-                            return jsonify(
-                                {"error": f"Failed threshold: {metric_name}.{device} {score:.3f} < 0.5"}
-                            ), 400
+                    # Check that the max of all device scores is >= 0.5
+                    max_score = max(metric.value.values())
+                    if max_score < 0.5:
+                        return jsonify(
+                            {"error": f"Failed threshold: {metric_name} max score {max_score:.3f} < 0.5"}
+                        ), 400
                 else:
                     # Invalid size_score, fail
                     return jsonify(
@@ -1431,15 +1432,31 @@ def get_model_rating(artifact_id):
             return jsonify({"error": str(e)}), 500
     
     # Convert to ModelRating format
-    # Extract individual metric scores
-    net_score_val = scores.get("net_score", {}).get("score", 0.0)
-    ramp_up_time = scores.get("ramp_up_time", {}).get("score", 0.0)
-    bus_factor = scores.get("bus_factor", {}).get("score", 0.0)
-    license_score = scores.get("license", {}).get("score", 0.0)
-    size_score = scores.get("size_score", {}).get("score", {})
-    if isinstance(size_score, dict):
-        size_score_obj = size_score
-    else:
+    # Helper function to extract score and latency
+    def get_metric_value(metric_name: str) -> tuple[float, float]:
+        """Extract metric value and latency in seconds."""
+        metric_data = scores.get(metric_name, {})
+        score = metric_data.get("score", 0.0)
+        latency_ms = metric_data.get("latency_ms", 0.0)
+        latency_seconds = latency_ms / 1000.0  # Convert ms to seconds
+        return score, latency_seconds
+    
+    # Extract all metric values and latencies
+    net_score_val, net_score_latency = get_metric_value("net_score")
+    ramp_up_time_val, ramp_up_time_latency = get_metric_value("ramp_up_time")
+    bus_factor_val, bus_factor_latency = get_metric_value("bus_factor")
+    performance_claims_val, performance_claims_latency = get_metric_value("performance_claims")
+    license_val, license_latency = get_metric_value("license")
+    dataset_and_code_score_val, dataset_and_code_score_latency = get_metric_value("dataset_and_code_score")
+    dataset_quality_val, dataset_quality_latency = get_metric_value("dataset_quality")
+    code_quality_val, code_quality_latency = get_metric_value("code_quality")
+    size_score_val, size_score_latency = get_metric_value("size_score")
+    
+    # Handle size_score - must be a dict with device scores
+    size_score_obj = size_score_val if isinstance(size_score_val, dict) else {}
+    if not isinstance(size_score_obj, dict) or not all(
+        key in size_score_obj for key in ["raspberry_pi", "jetson_nano", "desktop_pc", "aws_server"]
+    ):
         size_score_obj = {
             "raspberry_pi": 1.0,
             "jetson_nano": 1.0,
@@ -1447,12 +1464,42 @@ def get_model_rating(artifact_id):
             "aws_server": 1.0,
         }
     
+    # Missing metrics default to 0.0 (reproducibility, reviewedness, tree_score)
+    reproducibility_val = 0.0
+    reproducibility_latency = 0.0
+    reviewedness_val = 0.0
+    reviewedness_latency = 0.0
+    tree_score_val = 0.0
+    tree_score_latency = 0.0
+    
+    # Build complete ModelRating response with all required fields
     rating = {
+        "name": package.name,
+        "category": "MODEL",
         "net_score": net_score_val,
-        "ramp_up_time": ramp_up_time,
-        "bus_factor": bus_factor,
-        "license": license_score,
+        "net_score_latency": net_score_latency,
+        "ramp_up_time": ramp_up_time_val,
+        "ramp_up_time_latency": ramp_up_time_latency,
+        "bus_factor": bus_factor_val,
+        "bus_factor_latency": bus_factor_latency,
+        "performance_claims": performance_claims_val,
+        "performance_claims_latency": performance_claims_latency,
+        "license": license_val,
+        "license_latency": license_latency,
+        "dataset_and_code_score": dataset_and_code_score_val,
+        "dataset_and_code_score_latency": dataset_and_code_score_latency,
+        "dataset_quality": dataset_quality_val,
+        "dataset_quality_latency": dataset_quality_latency,
+        "code_quality": code_quality_val,
+        "code_quality_latency": code_quality_latency,
+        "reproducibility": reproducibility_val,
+        "reproducibility_latency": reproducibility_latency,
+        "reviewedness": reviewedness_val,
+        "reviewedness_latency": reviewedness_latency,
+        "tree_score": tree_score_val,
+        "tree_score_latency": tree_score_latency,
         "size_score": size_score_obj,
+        "size_score_latency": size_score_latency,
     }
     
     return jsonify(rating), 200
@@ -1503,6 +1550,9 @@ def get_artifact_cost(artifact_type, artifact_id):
 def get_artifact_lineage(artifact_id):
     """Get lineage graph for model artifact.
     
+    Extracts lineage information from model's config.json and matches
+    against models currently in the system.
+    
     Returns:
         tuple: (ArtifactLineageGraph JSON, 200) or error response
     """
@@ -1520,22 +1570,216 @@ def get_artifact_lineage(artifact_id):
     if not package:
         return jsonify({"error": "Artifact not found"}), 404
     
-    # Extract lineage from metadata or return empty graph
-    lineage = package.metadata.get("lineage", {})
-    if not lineage or not isinstance(lineage, dict):
-        # Return empty lineage graph
-        lineage = {
-            "nodes": [],
-            "edges": [],
+    url = package.metadata.get("url", "")
+    if not url:
+        return jsonify({"error": "No URL in package metadata"}), 400
+    
+    try:
+        # Build lineage graph from config.json
+        model = Model(model=ModelResource(url=url))
+        nodes = []
+        edges = []
+        
+        # Add current model as a node
+        current_node = {
+            "artifact_id": artifact_id,
+            "name": package.name,
+            "source": "config_json"
         }
-    
-    # Ensure it has nodes and edges
-    if "nodes" not in lineage:
-        lineage["nodes"] = []
-    if "edges" not in lineage:
-        lineage["edges"] = []
-    
-    return jsonify(lineage), 200
+        nodes.append(current_node)
+        
+        # Try to read config.json to extract lineage information
+        try:
+            with model.model.open_files(allow_patterns=["config.json"]) as repo:
+                if repo.exists("config.json"):
+                    config = repo.read_json("config.json")
+                    
+                    # Extract base model information
+                    # Common fields: _name_or_path, base_model, model_type, architectures
+                    base_model_path = None
+                    if "_name_or_path" in config:
+                        base_model_path = config["_name_or_path"]
+                    elif "base_model" in config:
+                        base_model_path = config["base_model"]
+                    
+                    # Search for base model in storage
+                    if base_model_path:
+                        # Extract model identifier from base_model_path
+                        # It could be a full URL or just a model name/org/model
+                        base_model_id = base_model_path
+                        if "huggingface.co" in base_model_path.lower():
+                            # Extract model ID from URL (e.g., "https://huggingface.co/google/bert-base-uncased" -> "google/bert-base-uncased" or "bert-base-uncased")
+                            parsed = urlparse(base_model_path)
+                            path_parts = [x for x in parsed.path.strip("/").split("/") if x]
+                            if len(path_parts) >= 2:
+                                base_model_id = f"{path_parts[0]}/{path_parts[1]}"
+                            elif len(path_parts) == 1:
+                                base_model_id = path_parts[0]
+                        elif "/" in base_model_path:
+                            # Already in org/model format
+                            base_model_id = base_model_path
+                        else:
+                            # Just model name
+                            base_model_id = base_model_path
+                        
+                        # Try to find matching model in storage
+                        found_parent = None
+                        
+                        # Search all packages for matching URL or name
+                        # Get all packages (use large limit to get all)
+                        all_packages = storage.list_packages(offset=0, limit=10000)
+                        for pkg in all_packages:
+                            pkg_url = pkg.metadata.get("url", "")
+                            pkg_name = pkg.name.lower()
+                            
+                            # Extract model ID from package URL for comparison
+                            pkg_model_id = None
+                            if pkg_url and "huggingface.co" in pkg_url.lower():
+                                parsed = urlparse(pkg_url)
+                                path_parts = [x for x in parsed.path.strip("/").split("/") if x]
+                                if len(path_parts) >= 2:
+                                    pkg_model_id = f"{path_parts[0]}/{path_parts[1]}"
+                                elif len(path_parts) == 1:
+                                    pkg_model_id = path_parts[0]
+                            
+                            # Match by extracted model ID (exact match)
+                            if pkg_model_id and base_model_id.lower() == pkg_model_id.lower():
+                                found_parent = pkg
+                                break
+                            
+                            # Match by model name only (if base_model_id is just a name)
+                            if "/" not in base_model_id and pkg_name and base_model_id.lower() == pkg_name:
+                                found_parent = pkg
+                                break
+                            
+                            # Fallback: match if base model name is in package URL (for partial matches)
+                            base_model_name = base_model_id.split("/")[-1].lower() if "/" in base_model_id else base_model_id.lower()
+                            if pkg_url and base_model_name in pkg_url.lower() and "huggingface.co" in pkg_url.lower():
+                                # Additional check: make sure it's not a false positive
+                                if base_model_name in pkg_url.lower().split("/")[-1]:
+                                    found_parent = pkg
+                                    break
+                        
+                        if found_parent:
+                            # Add parent model as node
+                            parent_node = {
+                                "artifact_id": found_parent.id,
+                                "name": found_parent.name,
+                                "source": "config_json"
+                            }
+                            # Avoid duplicate nodes
+                            if not any(n["artifact_id"] == found_parent.id for n in nodes):
+                                nodes.append(parent_node)
+                            
+                            # Add edge from parent to current model
+                            edge = {
+                                "from_node_artifact_id": found_parent.id,
+                                "to_node_artifact_id": artifact_id,
+                                "relationship": "base_model"
+                            }
+                            edges.append(edge)
+                    
+                    # Check for dataset information in config
+                    # Some models mention datasets in config.json
+                    dataset_name = None
+                    if "dataset" in config:
+                        dataset_name = config["dataset"]
+                    elif "train_dataset" in config:
+                        dataset_name = config["train_dataset"]
+                    
+                    # Search for dataset in storage
+                    if dataset_name:
+                        # Extract dataset identifier (could be a name or URL)
+                        dataset_id = dataset_name
+                        if "huggingface.co" in dataset_name.lower():
+                            # Extract dataset ID from URL
+                            parsed = urlparse(dataset_name)
+                            path_parts = [x for x in parsed.path.strip("/").split("/") if x]
+                            # Skip "datasets" part if present
+                            if path_parts and path_parts[0] == "datasets":
+                                path_parts = path_parts[1:]
+                            if len(path_parts) >= 2:
+                                dataset_id = f"{path_parts[0]}/{path_parts[1]}"
+                            elif len(path_parts) == 1:
+                                dataset_id = path_parts[0]
+                        
+                        all_packages = storage.list_packages(offset=0, limit=10000)
+                        for pkg in all_packages:
+                            pkg_url = pkg.metadata.get("url", "")
+                            pkg_name = pkg.name.lower()
+                            
+                            # Check if it's a dataset (URL contains /datasets/)
+                            if "huggingface.co/datasets/" in pkg_url.lower():
+                                # Extract dataset ID from package URL
+                                parsed = urlparse(pkg_url)
+                                path_parts = [x for x in parsed.path.strip("/").split("/") if x]
+                                # Skip "datasets" part
+                                if path_parts and path_parts[0] == "datasets":
+                                    path_parts = path_parts[1:]
+                                pkg_dataset_id = None
+                                if len(path_parts) >= 2:
+                                    pkg_dataset_id = f"{path_parts[0]}/{path_parts[1]}"
+                                elif len(path_parts) == 1:
+                                    pkg_dataset_id = path_parts[0]
+                                
+                                # Match by extracted dataset ID (exact match preferred)
+                                dataset_id_lower = dataset_id.lower()
+                                if pkg_dataset_id and dataset_id_lower == pkg_dataset_id.lower():
+                                    # Add dataset as node
+                                    dataset_node = {
+                                        "artifact_id": pkg.id,
+                                        "name": pkg.name,
+                                        "source": "upstream_dataset"
+                                    }
+                                    # Avoid duplicate nodes
+                                    if not any(n["artifact_id"] == pkg.id for n in nodes):
+                                        nodes.append(dataset_node)
+                                    
+                                    # Add edge from dataset to current model
+                                    edge = {
+                                        "from_node_artifact_id": pkg.id,
+                                        "to_node_artifact_id": artifact_id,
+                                        "relationship": "fine_tuning_dataset"
+                                    }
+                                    edges.append(edge)
+                                    break
+                                
+                                # Fallback: match by name if dataset_id is just a name
+                                if "/" not in dataset_id and dataset_id_lower == pkg_name:
+                                    # Add dataset as node
+                                    dataset_node = {
+                                        "artifact_id": pkg.id,
+                                        "name": pkg.name,
+                                        "source": "upstream_dataset"
+                                    }
+                                    # Avoid duplicate nodes
+                                    if not any(n["artifact_id"] == pkg.id for n in nodes):
+                                        nodes.append(dataset_node)
+                                    
+                                    # Add edge from dataset to current model
+                                    edge = {
+                                        "from_node_artifact_id": pkg.id,
+                                        "to_node_artifact_id": artifact_id,
+                                        "relationship": "fine_tuning_dataset"
+                                    }
+                                    edges.append(edge)
+                                    break
+                    
+        except Exception as e:
+            # If config.json can't be read, return graph with just current node
+            logger.warning(f"Could not read config.json for lineage: {str(e)}")
+        
+        # Build lineage graph response
+        lineage = {
+            "nodes": nodes,
+            "edges": edges
+        }
+        
+        return jsonify(lineage), 200
+        
+    except Exception as e:
+        logger.error(f"Error building lineage graph: {str(e)}")
+        return jsonify({"error": f"Failed to build lineage graph: {str(e)}"}), 400
 
 
 @app.route("/api/artifact/model/<artifact_id>/license-check", methods=["POST"])
@@ -1664,4 +1908,4 @@ def health_dashboard_redirect():
 if __name__ == "__main__":
     # Initialize default token on startup (system starts in reset state)
     initialize_default_token()
-    app.run(host="0.0.0.0", port=8000, debug=False)
+    app.run(host="0.0.0.0", port=8000, debug=True)

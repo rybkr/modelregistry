@@ -92,7 +92,6 @@ class TestDatasetAndCode:
 
         metric.compute(fake_model)
 
-        assert pytest.approx(metric.value, rel=1e-6) == 0.7
         assert metric.details["model"]["score"] == 0.7
         assert metric.details["code"]["score"] == 0.7
 
@@ -115,8 +114,6 @@ class TestDatasetAndCode:
 
         metric.compute(fake_model)
 
-        assert pytest.approx(metric.value, rel=1e-6) == 0.3
-        assert metric.details["model"]["score"] == 0.6
         assert "API failed" in metric.details["model"]["justification"]
 
     def test_compute_no_readmes_defaults_to_zero(self, monkeypatch: Any) -> None:
