@@ -1458,7 +1458,10 @@ def search_artifacts_by_regex():
     
     regex_pattern = data.get("regex", "")
     if not regex_pattern:
+        logger.warning("byRegEx endpoint called with missing regex in request body")
         return jsonify({"error": "regex required in request body"}), 400
+    
+    logger.info(f"byRegEx endpoint called with regex pattern: {regex_pattern}")
     
     # Search packages using regex
     try:
@@ -1470,8 +1473,10 @@ def search_artifacts_by_regex():
             pkg_type = infer_artifact_type(package)
             artifacts.append(package_to_artifact_metadata(package, pkg_type))
         
+        logger.info(f"byRegEx search completed successfully: {len(artifacts)} artifacts found")
         return jsonify(artifacts), 200
     except Exception as e:
+        logger.error(f"byRegEx search failed with exception: {str(e)}, pattern: {regex_pattern}")
         return jsonify({"error": str(e)}), 400
 
 
@@ -1506,4 +1511,4 @@ def health_dashboard_redirect():
 if __name__ == "__main__":
     # Initialize default token on startup (system starts in reset state)
     initialize_default_token()
-    app.run(host="0.0.0.0", port=8000, debug=True)
+    app.run(host="0.0.0.0", port=8000, debug=False)

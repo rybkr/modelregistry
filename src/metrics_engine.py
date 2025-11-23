@@ -1,5 +1,4 @@
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict
 
 from metrics.base_metric import Metric
@@ -42,7 +41,7 @@ def _safe_run(metric: Metric, model: Model) -> Metric:
 def compute_all_metrics(
     model: Model, include: set[str] | None = None
 ) -> dict[str, Metric]:
-    """Compute metrics for a model in parallel.
+    """Compute metrics for a model sequentially.
 
     Args:
         model: The model to evaluate
@@ -54,13 +53,10 @@ def compute_all_metrics(
     results: dict[str, Metric] = {}
     metrics = [m for m in ALL_METRICS if include is None or m.name in include]
 
-    with ThreadPoolExecutor() as executor:
-        futures = {
-            executor.submit(_safe_run, metric, model): metric.name for metric in metrics
-        }
-        for future in as_completed(futures):
-            metric = future.result()  # already Metric, no cast needed
-            results[metric.name] = metric
+    # Compute metrics sequentially to avoid threading/multiprocessing issues
+    for metric in metrics:
+        computed_metric = _safe_run(metric, model)
+        results[computed_metric.name] = computed_metric
 
     return results
 
