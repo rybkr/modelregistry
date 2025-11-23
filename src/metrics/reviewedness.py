@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import re
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 from urllib.parse import urlparse
 
 from adapters.client import GitHubClient
@@ -10,6 +11,18 @@ from adapters.code_fetchers import open_codebase
 from log import logger
 from metrics.base_metric import Metric
 from models import Model
+from resources.base_resource import _BaseResource
+
+
+def try_readme(resource: _BaseResource, filename: str = "README.md") -> Optional[str]:
+    """Attempt to fetch README.md via the resource's RepoView."""
+    try:
+        with resource.open_files(allow_patterns=[filename]) as repo:
+            if repo.exists(filename):
+                return repo.read_text(filename)
+    except Exception:
+        return None
+    return None
 
 
 # File patterns to exclude from LOC counting (weight files, binaries, data, large artifacts)
@@ -51,6 +64,74 @@ class Reviewedness(Metric):
     def _is_github_url(self, url: str) -> bool:
         """Check if URL is a GitHub repository URL."""
         return "github.com" in url.lower()
+
+    def _extract_github_urls_from_text(self, text: str) -> list[str]:
+        """Extract GitHub repository URLs from text (README, description, etc.).
+        
+        Args:
+            text: Text content to search for GitHub URLs
+            
+        Returns:
+            List of GitHub repository URLs found in the text
+        """
+        # Pattern to match GitHub URLs (handles various formats)
+        # Matches: 
+        # - https://github.com/owner/repo
+        # - http://github.com/owner/repo
+        # - github.com/owner/repo (without protocol)
+        # - https://www.github.com/owner/repo
+        # - URLs with /tree/ or /blob/ paths
+        # - Markdown links: [text](https://github.com/owner/repo)
+        github_pattern = r'(?:https?://(?:www\.)?|^|[\s\(\[\{])github\.com/[\w\.-]+/[\w\.-]+(?:/tree/[\w\.-]+)?(?:/blob/[\w\.-]+)?(?:/[\w\.-]+)*(?:\?[^\s\)\]\}]*)?(?:#[^\s\)\]\}]*)?'
+        
+        urls = re.findall(github_pattern, text, re.IGNORECASE | re.MULTILINE)
+        
+        # Clean up URLs - remove trailing fragments, query params, and normalize
+        cleaned_urls = []
+        for url in urls:
+            # Remove leading whitespace/punctuation
+            url = url.strip().lstrip('([')
+            # Remove trailing slash
+            url = url.rstrip('/').rstrip(')').rstrip(']').rstrip('}')
+            # Remove query params and fragments (keep tree/blob paths)
+            if '?' in url:
+                url = url.split('?')[0]
+            if '#' in url and '/tree/' not in url and '/blob/' not in url:
+                url = url.split('#')[0]
+            # Extract base repo URL (owner/repo)
+            match = re.search(r'github\.com/([\w\.-]+/[\w\.-]+)', url, re.IGNORECASE)
+            if match:
+                owner_repo = match.group(1)
+                # Reconstruct clean URL
+                clean_url = f"https://github.com/{owner_repo}"
+                if clean_url not in cleaned_urls:
+                    cleaned_urls.append(clean_url)
+        
+        return cleaned_urls
+
+    def _find_github_url_in_model_card(self, model: Model) -> Optional[str]:
+        """Try to find a GitHub repository URL in the model card/README.
+        
+        Args:
+            model: The model object
+            
+        Returns:
+            GitHub repository URL if found, None otherwise
+        """
+        # Try to get README from model
+        readme: Optional[str] = None
+        if model.model:
+            readme = try_readme(model.model)
+        
+        if readme:
+            # Extract GitHub URLs from README
+            github_urls = self._extract_github_urls_from_text(readme)
+            if github_urls:
+                # Return the first GitHub URL found
+                logger.info(f"Found GitHub URL in model card: {github_urls[0]}")
+                return github_urls[0]
+        
+        return None
 
     def _extract_owner_repo(self, url: str) -> tuple[str, str] | None:
         """Extract owner and repo from GitHub URL."""
@@ -175,12 +256,19 @@ class Reviewedness(Metric):
             # Get code URL from model
             url: str | None = model.code.url if model.code else None
             
+            # If no code URL provided, try to find GitHub URL in model card/README
             if not url:
-                self.value = -1.0
-                self.latency_ms = int(round((time.perf_counter() - start) * 1000))
-                self.details = {"error": "No code URL provided"}
-                logger.warning("No code URL provided for Reviewedness metric")
-                return
+                logger.info("No code URL provided, searching model card for GitHub repository...")
+                url = self._find_github_url_in_model_card(model)
+                
+                if not url:
+                    self.value = -1.0
+                    self.latency_ms = int(round((time.perf_counter() - start) * 1000))
+                    self.details = {"error": "No code URL provided and no GitHub repository found in model card"}
+                    logger.warning("No code URL provided and no GitHub repository found in model card")
+                    return
+                else:
+                    logger.info(f"Using GitHub URL found in model card: {url}")
 
             # Check if it's a GitHub repository
             if not self._is_github_url(url):
