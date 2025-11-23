@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, render_template, Response, send_file
+from flask import Flask, jsonify, request, render_template, Response, send_file, url_for
 from flask_cors import CORS
 from typing import Optional
 from datetime import datetime, timezone
@@ -153,9 +153,18 @@ def package_to_artifact(package: Package, artifact_type: Optional[str] = None) -
     """
     url = package.metadata.get("url", "")
     artifact_data = {"url": url}
-    # Add download_url if available in metadata
-    if "download_url" in package.metadata:
-        artifact_data["download_url"] = package.metadata["download_url"]
+    
+    # Generate download_url - per OpenAPI spec, server should generate this
+    # Use the package download endpoint with the package ID
+    try:
+        # Generate download URL pointing to the package download endpoint
+        # Format: /packages/<package_id>/download
+        download_url = f"/packages/{package.id}/download"
+        artifact_data["download_url"] = download_url
+    except Exception:
+        # If URL generation fails, only include if already in metadata
+        if "download_url" in package.metadata:
+            artifact_data["download_url"] = package.metadata["download_url"]
     
     return {
         "metadata": package_to_artifact_metadata(package, artifact_type),
@@ -249,6 +258,7 @@ def api_root():
     return jsonify({"message": "Model Registry API v1.0", "status": "running"}), 200
 
 
+@app.route("/packages", methods=["POST"])
 @app.route("/api/packages", methods=["POST"])
 def upload_package():
     """Upload a new package to the registry.
@@ -312,6 +322,7 @@ def upload_package():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/packages", methods=["GET"])
 @app.route("/api/packages", methods=["GET"])
 def list_packages():
     """List packages with optional search and pagination.
@@ -637,6 +648,7 @@ def rate_package(package_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/ingest", methods=["POST"])
 @app.route("/api/ingest", methods=["POST"])
 def ingest_model():
     """Ingest and validate a HuggingFace model into the registry.
