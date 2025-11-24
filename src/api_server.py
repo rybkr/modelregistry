@@ -79,7 +79,7 @@ def initialize_default_token():
 # ----------------------------------------------------------------------------
 #   GET      /health                                    yes           yes
 #   GET      /health/components                         no            no
-#   POST     /artifacts                                 yes           maybe
+#   POST     /artifacts                                 yes           no
 #   GET      /artifacts/{artifact_type}/{id}            yes           yes
 #   PUT      /artifacts/{artifact_type}/{id}            yes           yes
 #   DELETE   /artifacts/{artifact_type}/{id}            yes           no
@@ -536,6 +536,7 @@ def get_package(package_id):
         return error_response
 
     queries = request.get_json()
+    logger.info(f"queries: {queries}")
     if not isinstance(queries, list) or len(queries) == 0:
         return jsonify(
             {
@@ -594,6 +595,7 @@ def get_package(package_id):
             response.headers["offset"] = offset_header
         if len(artifacts) > 100:
             return jsonify({"error": "Too many results"}), 413
+        logger.info(f"artifacts: {artifacts}")
         return response, 200
 
     except Exception as e:
@@ -656,6 +658,10 @@ def get_artifact(artifact_type, artifact_id):
     Returns:
         tuple: (Artifact JSON, 200) or error response
     """
+    logger.info(
+        f"get_artifact called: id={artifact_id} type={artifact_type}"
+    )
+
     is_valid, error_response = check_auth_header()
     if not is_valid:
         return error_response
@@ -671,6 +677,9 @@ def get_artifact(artifact_type, artifact_id):
         return jsonify({"error": "Artifact not found"}), 404
 
     artifact = package_to_artifact(package, artifact_type)
+    logger.info(
+        f"returning: artifact={artifact}"
+    )
     return jsonify(artifact), 200
 
 
@@ -777,19 +786,19 @@ def create_artifact(artifact_type):
     Returns:
         tuple: (Artifact JSON, 201/202/424) or error response
     """
-    # Check auth
     is_valid, error_response = check_auth_header()
     if not is_valid:
         return error_response
 
-    # Validate artifact_type
     if not validate_artifact_type(artifact_type):
         return jsonify({"error": f"Invalid artifact type: {artifact_type}"}), 400
 
-    # Parse request body
     data = request.get_json()
     if not data or "url" not in data:
         return jsonify({"error": "URL required in request body"}), 400
+    logger.info(
+        f"artifact data: {data}"
+    )
 
     url = data["url"]
 
