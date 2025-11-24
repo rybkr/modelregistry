@@ -295,6 +295,32 @@ class GitHubClient(_Client):
                 
         return all_prs
 
+    def get_pull_request(self, owner: str, repo: str, pr_number: int, retries: int = 0, token: Optional[str] = None) -> dict[str, Any] | None:
+        """Get details for a specific pull request, including additions and deletions.
+
+        Args:
+            owner: The repository owner (username or organization)
+            repo: The repository name
+            pr_number: The pull request number
+            retries: Number of retry attempts for failed requests
+            token: Optional GitHub API token for authentication
+
+        Returns:
+            Pull request dictionary with details, or None if the request fails
+        """
+        path = f"/{owner}/{repo}/pulls/{pr_number}"
+        headers = {"Accept": "application/vnd.github+json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        
+        try:
+            data = self._get_json(path, retries, headers=headers)
+            if not isinstance(data, dict):
+                return None
+            return data
+        except Exception:
+            return None
+
     def get_pull_request_reviews(
         self, owner: str, repo: str, pr_number: int, retries: int = 0, token: Optional[str] = None
     ) -> list[dict[str, Any]]:
