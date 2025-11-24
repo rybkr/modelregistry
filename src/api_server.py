@@ -191,16 +191,17 @@ def package_to_artifact(package: Package, artifact_type: Optional[str] = None) -
     """
     url = package.metadata.get("url", "")
     artifact_data = {"url": url}
-
+    
     try:
+        download_url = f"/packages/{package.id}/download"
         artifact_data["download_url"] = download_url
     except Exception:
         if "download_url" in package.metadata:
             artifact_data["download_url"] = package.metadata["download_url"]
-
+    
     return {
         "metadata": package_to_artifact_metadata(package, artifact_type),
-        "data": artifact_data,
+        "data": artifact_data
     }
 
 
@@ -279,6 +280,166 @@ def health():
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     ), 200
+
+
+@app.route("/api/packages", methods=["GET", "POST"])
+def packages():
+    """Handle GET and POST requests for packages.
+
+    GET: Get packages with optional search and pagination.
+    POST: Create a new package.
+    """
+    if request.method == "GET":
+        return get_packages()
+    else:
+        return create_package()
+
+
+def get_packages():
+    """Get packages with optional search and pagination.
+
+    Query parameters:
+        offset: Pagination offset (default: 0)
+        limit: Maximum number of packages to return (default: 25)
+        query: Search query string (optional)
+        regex: If 'true', treat query as regex pattern (default: false)
+        version: Filter by version (optional)
+        sort-field: Field to sort by (optional)
+        sort-order: Sort order 'asc' or 'desc' (optional)
+
+    Returns:
+        tuple: JSON response with packages, total, offset, limit
+    """
+    logger.info("get_packages called")
+
+    # Get query parameters
+    offset_str = request.args.get("offset", "0")
+    limit_str = request.args.get("limit", "25")
+    query = request.args.get("query", "").strip()
+    use_regex = request.args.get("regex", "false").lower() == "true"
+    version = request.args.get("version", "").strip()
+    sort_field = request.args.get("sort-field", "").strip()
+    sort_order = request.args.get("sort-order", "").strip()
+
+    try:
+        offset = int(offset_str)
+        limit = int(limit_str)
+    except ValueError:
+        return jsonify({"error": "Invalid offset or limit parameter"}), 400
+
+    # Get all packages or search
+    if query:
+        packages = storage.search_packages(query, use_regex=use_regex)
+    else:
+        packages = list(storage.packages.values())
+
+    # Filter by version if specified
+    if version:
+        packages = [pkg for pkg in packages if pkg.version == version]
+
+    # Sort if specified
+    if sort_field:
+        reverse = sort_order.lower() == "desc"
+        try:
+            if sort_field == "name":
+                packages.sort(key=lambda p: p.name.lower(), reverse=reverse)
+            elif sort_field == "version":
+                packages.sort(key=lambda p: p.version, reverse=reverse)
+            elif sort_field == "upload_timestamp":
+                packages.sort(key=lambda p: p.upload_timestamp, reverse=reverse)
+            elif sort_field == "size_bytes":
+                packages.sort(key=lambda p: p.size_bytes, reverse=reverse)
+        except Exception as e:
+            logger.warning(f"Sort failed: {e}")
+
+    total = len(packages)
+
+    # Apply pagination
+    paginated_packages = packages[offset : offset + limit]
+
+    # Convert to dict format expected by frontend
+    packages_data = []
+    for package in paginated_packages:
+        packages_data.append(
+            {
+                "id": package.id,
+                "name": package.name,
+                "version": package.version,
+                "uploaded_by": package.uploaded_by,
+                "upload_timestamp": package.upload_timestamp.isoformat(),
+                "size_bytes": package.size_bytes,
+                "metadata": package.metadata,
+            }
+        )
+
+    response = {
+        "packages": packages_data,
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+    }
+
+    return jsonify(response), 200
+
+
+def create_package():
+    """Create a new package.
+
+    Request body:
+        name: Package name (required)
+        version: Package version (required)
+        content: Package content (optional)
+        metadata: Additional metadata dict (optional)
+
+    Returns:
+        tuple: JSON response with package data, 201
+    """
+    logger.info("create_package called")
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Request body must be JSON"}), 400
+
+    # Validate required fields
+    name = data.get("name", "").strip()
+    version = data.get("version", "").strip()
+
+    if not name:
+        return jsonify({"error": "Package name is required"}), 400
+    if not version:
+        return jsonify({"error": "Package version is required"}), 400
+
+    # Get optional fields
+    content = data.get("content", "")
+    metadata = data.get("metadata", {})
+    if not isinstance(metadata, dict):
+        return jsonify({"error": "metadata must be a dictionary"}), 400
+
+    # Calculate size_bytes from content
+    size_bytes = len(content.encode("utf-8")) if content else 0
+
+    # Generate package ID
+    package_id = str(uuid.uuid4())
+
+    # Create package
+    package = Package(
+        id=package_id,
+        name=name,
+        version=version,
+        uploaded_by=DEFAULT_USERNAME,
+        upload_timestamp=datetime.now(timezone.utc),
+        size_bytes=size_bytes,
+        metadata=metadata,
+        s3_key=None,
+    )
+
+    # Store package
+    storage.create_package(package)
+
+    logger.info(f"Package created: {package_id} ({name} v{version})")
+
+    # Return package data in format expected by frontend
+    return jsonify({"package": package.to_dict()}), 201
 
 
 @app.route("/api/artifacts", methods=["POST"])
@@ -962,6 +1123,54 @@ def authenticate():
         ), 400
 
 
+@app.route("/api/artifact/byName/<artifact_name>", methods=["GET"])
+def get_artifacts_by_name(artifact_name):
+    """Get artifact metadata entries by name.
+
+    Per OpenAPI spec: Returns metadata for each artifact matching the provided name.
+
+    Args:
+        artifact_name: Name of artifacts to find
+
+    Returns:
+        tuple: (Array of ArtifactMetadata JSON, 200) or error response
+            - 200: Array of ArtifactMetadata objects
+            - 400: Invalid artifact name
+            - 403: Authentication failed
+            - 404: No artifacts found with this name
+    """
+    logger.info(f"get_artifacts_by_name called with name: {artifact_name}")
+
+    is_valid, error_response = check_auth_header()
+    if not is_valid:
+        logger.warning("get_artifacts_by_name: auth check failed")
+        return error_response
+
+    if not artifact_name or not artifact_name.strip():
+        return jsonify(
+            {
+                "description": "There is missing field(s) in the artifact_name or it is formed improperly, or is invalid."
+            }
+        ), 400
+
+    matching_packages = []
+    for package in storage.packages.values():
+        if package.name == artifact_name:
+            matching_packages.append(package)
+
+    if not matching_packages:
+        logger.info(f"No artifacts found with name: {artifact_name}")
+        return jsonify({"error": "No such artifact."}), 404
+
+    artifacts = []
+    for package in matching_packages:
+        artifact_metadata = package_to_artifact_metadata(package)
+        artifacts.append(artifact_metadata)
+
+    logger.info(f"Found {len(artifacts)} artifacts with name: {artifact_name}")
+    return jsonify(artifacts), 200
+
+
 @app.route("/api/artifact/model/<artifact_id>/lineage", methods=["GET"])
 def get_artifact_lineage(artifact_id):
     """Get lineage graph for model artifact.
@@ -1240,16 +1449,13 @@ def rate_package(package_id):
     Returns:
         tuple: (boolean JSON, 200) or error response
     """
-    # Check auth
     is_valid, error_response = check_auth_header()
     if not is_valid:
         return error_response
 
-    # Validate artifact_id
     if not validate_artifact_id(artifact_id):
         return jsonify({"error": "Invalid artifact ID format"}), 400
 
-    # Parse request body
     data = request.get_json()
     if not data:
         return jsonify({"error": "Request body required"}), 400
@@ -1258,12 +1464,10 @@ def rate_package(package_id):
     if not github_url:
         return jsonify({"error": "github_url required in request body"}), 400
 
-    # Retrieve package
     package = storage.get_package(artifact_id)
     if not package:
         return jsonify({"error": "Artifact not found"}), 404
 
-    # Check license compatibility using existing license metric
     try:
         url = package.metadata.get("url", "")
         if not url:
@@ -1274,7 +1478,6 @@ def rate_package(package_id):
         license_metric = results.get("license")
 
         if license_metric:
-            # License is compatible if score > 0.5
             is_compatible = license_metric.value > 0.5
             return jsonify(is_compatible), 200
         else:
