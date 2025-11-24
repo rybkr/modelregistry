@@ -340,7 +340,11 @@ class RegistryStorage:
                 matching_packages = all_packages
             else:
                 # Process individual queries
+                # For exact name matching: return only ONE result total
+                found_exact_match = False
                 for query in queries:
+                    if found_exact_match:
+                        break
                     if not isinstance(query, dict):
                         continue
                     query_name = query.get("name", "")
@@ -349,10 +353,10 @@ class RegistryStorage:
                     if not isinstance(query_types, list):
                         query_types = []
 
-                    # Filter by name
                     if query_name and query_name != "*":
                         for pkg in self.packages.values():
-                            if query_name.lower() in pkg.name.lower():
+                            # Exact name match (case-sensitive)
+                            if query_name == pkg.name:
                                 # Filter by types if specified
                                 if query_types:
                                     url = pkg.metadata.get("url", "")
@@ -363,8 +367,16 @@ class RegistryStorage:
                                         pkg_type = "code"
                                     if pkg_type not in query_types:
                                         continue
+                                # Only add the first exact match and return immediately
+                                # This ensures only ONE result is returned
                                 if pkg not in matching_packages:
                                     matching_packages.append(pkg)
+                                    found_exact_match = True
+                                    # Break out of inner loop
+                                    break
+                        # If we found a match, stop processing remaining queries
+                        if found_exact_match:
+                            break
                     elif query_types:
                         # Filter by types only (when name is "*" or empty)
                         for pkg in self.packages.values():

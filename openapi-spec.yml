@@ -714,6 +714,7 @@ paths:
           description: Authentication failed due to invalid or missing AuthenticationToken.
         "404":
           description: The artifact or GitHub project could not be found.
+            # License is compatible if score > 0.5
         "502":
           description: External license information could not be retrieved.
       operationId: ArtifactLicenseCheck
