@@ -36,6 +36,29 @@ STATIC_DIR = os.path.join(SRC_DIR, "static")
 app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
 CORS(app)
 
+
+# Register JSON error handler to ensure API endpoints always return JSON
+@app.errorhandler(404)
+def not_found(error):
+    """Return JSON 404 errors for API requests."""
+    accept_header = request.headers.get("Accept", "")
+    if request.path.startswith('/api/') or (request.path.startswith('/packages/') and '/rate' in request.path):
+        return jsonify({"error": "Not found"}), 404
+    if "application/json" in accept_header:
+        return jsonify({"error": "Not found"}), 404
+    return error
+
+
+@app.errorhandler(500)
+def internal_error(error):
+    """Return JSON 500 errors for API requests."""
+    accept_header = request.headers.get("Accept", "")
+    if request.path.startswith('/api/') or (request.path.startswith('/packages/') and '/rate' in request.path):
+        return jsonify({"error": "Internal server error"}), 500
+    if "application/json" in accept_header:
+        return jsonify({"error": "Internal server error"}), 500
+    return error
+
 DEFAULT_USERNAME = "ece30861defaultadminuser"
 # Password from autograder - uses "packages" not "artifacts" as shown in OpenAPI spec example
 DEFAULT_PASSWORD = "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE packages;"
@@ -398,6 +421,7 @@ def list_packages():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/packages/<package_id>", methods=["GET"])
 @app.route("/api/packages/<package_id>", methods=["GET"])
 def get_package(package_id):
     """Retrieve a specific package by ID.
@@ -602,6 +626,7 @@ def download_package(package_id):
 
 
 @app.route("/packages/<package_id>/rate", methods=["GET"])
+@app.route("/api/packages/<package_id>/rate", methods=["GET"])
 def rate_package(package_id):
     """Calculate and return quality metrics for a package.
 
