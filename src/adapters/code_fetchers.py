@@ -132,11 +132,10 @@ class _GitHubCodeFetcher(AbstractContextManager[RepoView]):
         """
         self.owner = owner
         self.repo = repo
-        self.token = token
-        # Get default branch - pass token to avoid rate limiting
         self.ref = ref or GitHubClient().get_metadata(
-            f"https://github.com/{owner}/{repo}", token=token
+            f"https://github.com/{owner}/{repo}"
         ).get("default_branch", "main")
+        self.token = token
         self._tmp_dir: Optional[tempfile.TemporaryDirectory[str]] = None
         self._root: Optional[Path] = None
 
