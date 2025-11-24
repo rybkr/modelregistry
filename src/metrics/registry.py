@@ -6,7 +6,6 @@ from metrics.dataset_quality import DatasetQuality
 from metrics.license import License
 from metrics.performance import Performance
 from metrics.ramp_up_time import RampUpTime
-from metrics.reviewedness import Reviewedness
 from metrics.size import Size
 
 ALL_METRICS: list[Metric] = [
@@ -18,7 +17,6 @@ ALL_METRICS: list[Metric] = [
     Performance(),
     DatasetAndCode(),
     DatasetQuality(),
-    Reviewedness(),
     # add more metrics here
 ]
 
