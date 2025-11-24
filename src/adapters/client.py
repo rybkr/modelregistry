@@ -248,6 +248,107 @@ class GitHubClient(_Client):
             return None
         return len(data)
 
+    def get_pull_requests(
+        self, owner: str, repo: str, state: str = "all", retries: int = 0, token: Optional[str] = None
+    ) -> list[dict[str, Any]]:
+        """Get all pull requests for a GitHub repository.
+
+        Args:
+            owner: The repository owner (username or organization)
+            repo: The repository name
+            state: The state of the PRs to fetch (open, closed, or all). Defaults to "all"
+            retries: Number of retry attempts for failed requests
+            token: Optional GitHub API token for authentication
+
+        Returns:
+            List of pull request dictionaries, or empty list if the request fails
+        """
+        headers = {"Accept": "application/vnd.github+json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        
+        all_prs = []
+        page = 1
+        per_page = 100
+        
+        while True:
+            try:
+                path = f"/{owner}/{repo}/pulls?state={state}&page={page}&per_page={per_page}"
+                # Use _get_json for consistency, but handle pagination manually
+                url = self.base_url + path
+                response = requests.get(url, headers=headers)
+                response.raise_for_status()
+                prs = response.json()
+                
+                if not isinstance(prs, list) or len(prs) == 0:
+                    break
+                    
+                all_prs.extend(prs)
+                
+                # If we got fewer than per_page results, we're done
+                if len(prs) < per_page:
+                    break
+                    
+                page += 1
+            except Exception:
+                break
+                
+        return all_prs
+
+    def get_pull_request(self, owner: str, repo: str, pr_number: int, retries: int = 0, token: Optional[str] = None) -> dict[str, Any] | None:
+        """Get details for a specific pull request, including additions and deletions.
+
+        Args:
+            owner: The repository owner (username or organization)
+            repo: The repository name
+            pr_number: The pull request number
+            retries: Number of retry attempts for failed requests
+            token: Optional GitHub API token for authentication
+
+        Returns:
+            Pull request dictionary with details, or None if the request fails
+        """
+        path = f"/{owner}/{repo}/pulls/{pr_number}"
+        headers = {"Accept": "application/vnd.github+json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        
+        try:
+            data = self._get_json(path, retries, headers=headers)
+            if not isinstance(data, dict):
+                return None
+            return data
+        except Exception:
+            return None
+
+    def get_pull_request_reviews(
+        self, owner: str, repo: str, pr_number: int, retries: int = 0, token: Optional[str] = None
+    ) -> list[dict[str, Any]]:
+        """Get reviews for a specific pull request.
+
+        Args:
+            owner: The repository owner (username or organization)
+            repo: The repository name
+            pr_number: The pull request number
+            retries: Number of retry attempts for failed requests
+            token: Optional GitHub API token for authentication
+
+        Returns:
+            List of review dictionaries, or empty list if the request fails
+        """
+        path = f"/{owner}/{repo}/pulls/{pr_number}/reviews"
+        headers = {"Accept": "application/vnd.github+json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        
+        try:
+            data = self._get_json(path, retries, headers=headers)
+            if not isinstance(data, list):
+                return []
+            return data
+        except Exception:
+            return []
+
 
 class GitLabClient(_Client):
     """A client for interacting with the GitLab API.
