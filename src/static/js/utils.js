@@ -13,10 +13,12 @@ function showAlert(message, type = 'info', duration = 5000) {
     if (!alertContainer) return;
 
     const alertId = `alert-${Date.now()}`;
+    // Escape HTML to prevent XSS
+    const escapedMessage = escapeHtml(message);
     const alertHtml = `
         <div class="alert alert-${type} alert-dismissible fade show" role="alert" id="${alertId}">
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            ${escapedMessage}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close alert"></button>
         </div>
     `;
     
@@ -31,6 +33,73 @@ function showAlert(message, type = 'info', duration = 5000) {
             }
         }, duration);
     }
+}
+
+/**
+ * Show an accessible confirmation dialog
+ * @param {string} message - Confirmation message
+ * @param {string} title - Dialog title (optional)
+ * @returns {Promise<boolean>} Promise that resolves to true if confirmed, false if cancelled
+ */
+function showConfirmDialog(message, title = 'Confirm Action') {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('accessible-modal');
+        if (!modal) {
+            // Fallback to browser confirm if modal doesn't exist
+            resolve(confirm(message));
+            return;
+        }
+
+        const modalTitle = document.getElementById('modal-title');
+        const modalBody = document.getElementById('modal-body');
+        const confirmBtn = document.getElementById('modal-confirm');
+        const cancelBtn = document.getElementById('modal-cancel');
+        const bsModal = new bootstrap.Modal(modal);
+
+        // Set content
+        modalTitle.textContent = title;
+        modalBody.textContent = message;
+
+        // Remove existing event listeners by cloning
+        const newConfirmBtn = confirmBtn.cloneNode(true);
+        const newCancelBtn = cancelBtn.cloneNode(true);
+        confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+        cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+
+        // Add new event listeners
+        newConfirmBtn.addEventListener('click', () => {
+            bsModal.hide();
+            resolve(true);
+        });
+
+        newCancelBtn.addEventListener('click', () => {
+            bsModal.hide();
+            resolve(false);
+        });
+
+        // Handle ESC key and backdrop click
+        modal.addEventListener('hidden.bs.modal', () => {
+            resolve(false);
+        }, { once: true });
+
+        // Show modal and focus on confirm button
+        bsModal.show();
+        setTimeout(() => {
+            newConfirmBtn.focus();
+        }, 100);
+    });
+}
+
+/**
+ * Escape HTML to prevent XSS
+ * @param {string} text - Text to escape
+ * @returns {string} Escaped HTML
+ */
+function escapeHtml(text) {
+    if (typeof text !== 'string') return text;
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 /**

@@ -1,5 +1,5 @@
 def test_health_endpoint(client):
-    response = client.get("/health")
+    response = client.get("/api/health")
     assert response.status_code == 200
     data = response.get_json()
     assert data["status"] == "healthy"
@@ -20,7 +20,7 @@ def test_upload_package(client):
         "metadata": {"description": "Test model"},
     }
 
-    response = client.post("/packages", json=package_data)
+    response = client.post("/api/packages", json=package_data)
     assert response.status_code == 201
 
     data = response.get_json()
@@ -31,9 +31,9 @@ def test_upload_package(client):
 
 def test_list_packages(client):
     package_data = {"name": "test-model", "version": "1.0.0"}
-    client.post("/packages", json=package_data)
+    client.post("/api/packages", json=package_data)
 
-    response = client.get("/packages")
+    response = client.get("/api/packages")
     assert response.status_code == 200
 
     data = response.get_json()
@@ -43,10 +43,10 @@ def test_list_packages(client):
 
 def test_get_package(client):
     package_data = {"name": "test-model", "version": "1.0.0"}
-    upload_response = client.post("/packages", json=package_data)
+    upload_response = client.post("/api/packages", json=package_data)
     package_id = upload_response.get_json()["package"]["id"]
 
-    response = client.get(f"/packages/{package_id}")
+    response = client.get(f"/api/packages/{package_id}")
     assert response.status_code == 200
 
     data = response.get_json()
@@ -56,24 +56,35 @@ def test_get_package(client):
 
 def test_delete_package(client):
     package_data = {"name": "test-model", "version": "1.0.0"}
-    upload_response = client.post("/packages", json=package_data)
+    upload_response = client.post("/api/packages", json=package_data)
     package_id = upload_response.get_json()["package"]["id"]
 
-    response = client.delete(f"/packages/{package_id}")
+    response = client.delete(f"/api/packages/{package_id}")
     assert response.status_code == 200
 
-    get_response = client.get(f"/packages/{package_id}")
+    get_response = client.get(f"/api/packages/{package_id}")
     assert get_response.status_code == 404
 
 
 def test_reset_registry(client):
     package_data = {"name": "test-model", "version": "1.0.0"}
-    client.post("/packages", json=package_data)
+    client.post("/api/packages", json=package_data)
 
-    response = client.delete("/reset")
+    # Authenticate to get token (required by OpenAPI spec)
+    # Note: autograder uses "packages" not "artifacts" in the password
+    auth_data = {
+        "user": {"name": "ece30861defaultadminuser", "is_admin": True},
+        "secret": {"password": "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE packages;"}
+    }
+    auth_response = client.put("/api/authenticate", json=auth_data)
+    assert auth_response.status_code == 200
+    token = auth_response.get_json()  # Token is returned as JSON string
+
+    # Call reset with authentication header
+    response = client.delete("/api/reset", headers={"X-Authorization": token})
     assert response.status_code == 200
 
-    list_response = client.get("/packages")
+    list_response = client.get("/api/packages")
     data = list_response.get_json()
     assert data["total"] == 0
 

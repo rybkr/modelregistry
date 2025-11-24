@@ -95,5 +95,5 @@ jobs:
           echo "Deployed to: http://$URL"
           echo "Waiting for deployment to be ready..."
           sleep 60  # Wait for deployment to stabilize
-          curl -f http://$URL/health || exit 1
+          curl -f http://$URL/api/health || exit 1
 

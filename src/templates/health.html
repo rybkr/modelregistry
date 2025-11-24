@@ -49,16 +49,16 @@
                     <i class="bi bi-arrow-clockwise me-1" aria-hidden="true"></i>Refresh
                 </button>
             </div>
-            <div class="card-body">
-                <div id="health-details">
-                    <div class="text-center py-5">
-                        <div class="spinner-border text-primary" role="status">
-                            <span class="visually-hidden">Loading health data...</span>
+                    <div class="card-body">
+                        <div id="health-details" role="region" aria-live="polite" aria-label="Health details">
+                            <div class="text-center py-5">
+                                <div class="spinner-border text-primary" role="status" aria-hidden="true">
+                                    <span class="visually-hidden">Loading health data...</span>
+                                </div>
+                                <p class="mt-2" aria-live="polite">Loading health data...</p>
+                            </div>
                         </div>
-                        <p class="mt-2">Loading health data...</p>
                     </div>
-                </div>
-            </div>
         </div>
 
         <!-- Activity & Logs -->
@@ -75,7 +75,7 @@
                         </div>
                     </div>
                     <div class="card-body">
-                        <div class="row" id="activity-summary">
+                        <div class="row" id="activity-summary" role="region" aria-live="polite" aria-label="Activity summary">
                             <div class="col-12 text-center text-muted py-3">Loading activity data...</div>
                         </div>
                     </div>
@@ -90,7 +90,7 @@
                         </button>
                     </div>
                     <div class="card-body">
-                        <div id="logs-body" class="small text-monospace" style="max-height: 320px; overflow-y: auto;">
+                        <div id="logs-body" class="small text-monospace" style="max-height: 320px; overflow-y: auto;" role="log" aria-live="polite" aria-label="System logs">
                             <p class="text-muted text-center mb-0">Loading logs...</p>
                         </div>
                     </div>
@@ -114,7 +114,7 @@
                                 <th scope="col">Message</th>
                             </tr>
                         </thead>
-                        <tbody id="activity-events-body">
+                        <tbody id="activity-events-body" role="region" aria-live="polite" aria-label="Activity timeline">
                             <tr>
                                 <td colspan="4" class="text-muted text-center py-4">Loading activity timeline...</td>
                             </tr>
