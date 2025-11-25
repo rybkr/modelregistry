@@ -132,10 +132,11 @@ class _GitHubCodeFetcher(AbstractContextManager[RepoView]):
         """
         self.owner = owner
         self.repo = repo
-        self.ref = ref or GitHubClient().get_metadata(
-            f"https://github.com/{owner}/{repo}"
-        ).get("default_branch", "main")
         self.token = token
+        # Get default branch - pass token to avoid rate limiting
+        self.ref = ref or GitHubClient().get_metadata(
+            f"https://github.com/{owner}/{repo}", token=token
+        ).get("default_branch", "main")
         self._tmp_dir: Optional[tempfile.TemporaryDirectory[str]] = None
         self._root: Optional[Path] = None
 
@@ -257,3 +258,4 @@ def _extract_tarball(url: str, headers: dict[str, Any], dest: Path) -> None:
 def _top_dir(root: Path) -> Path:
     dirs = [p for p in root.iterdir() if p.is_dir()]
     return dirs[0] if dirs else root
+    
