@@ -99,7 +99,7 @@ def test_reset_registry(client):
 
 
 def test_health_dashboard_page(client):
-    response = client.get("/health/dashboard")
+    response = client.get("/health")
     assert response.status_code == 200
     assert b"System Health Dashboard" in response.data
 
