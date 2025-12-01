@@ -24,6 +24,18 @@ def client():
 
 
 @pytest.fixture
+def auth_token(client):
+    """Get authentication token for API requests."""
+    auth_data = {
+        "user": {"name": "ece30861defaultadminuser", "is_admin": True},
+        "secret": {"password": "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE packages;"}
+    }
+    response = client.put("/api/authenticate", json=auth_data)
+    assert response.status_code == 200
+    return response.get_json()
+
+
+@pytest.fixture
 def mock_model_resource():
     """Create a mock ModelResource and Model for testing."""
     with patch("api_server.Model") as mock_model_class, \
@@ -69,49 +81,50 @@ def mock_model_resource():
         yield mock_model_class, mock_resource_class
 
 
-def test_download_package_not_found(client):
+def test_download_package_not_found(client, auth_token):
     """Test download returns 404 for non-existent package."""
-    response = client.get("/packages/non-existent-id/download")
+    response = client.get("/packages/non-existent-id/download",
+                         headers={"X-Authorization": auth_token})
 
     assert response.status_code == 404
     data = response.get_json()
     assert "not found" in data["error"].lower()
 
 
-def test_download_package_no_url(client):
+def test_download_package_no_url(client, auth_token):
     """Test download returns 400 when package has no URL."""
     # Create package without URL
     response = client.post("/packages", json={
         "name": "test-package",
         "version": "1.0.0",
         "metadata": {}  # No URL
-    })
+    }, headers={"X-Authorization": auth_token})
 
     assert response.status_code == 201
     package_id = response.get_json()["package"]["id"]
 
     # Try to download
-    response = client.get(f"/packages/{package_id}/download")
+    response = client.get(f"/packages/{package_id}/download", headers={"X-Authorization": auth_token})
 
     assert response.status_code == 400
     data = response.get_json()
     assert "no associated model url" in data["error"].lower()
 
 
-def test_download_invalid_content_type(client, mock_model_resource):
+def test_download_invalid_content_type(client, auth_token, mock_model_resource):
     """Test download returns 400 for invalid content type."""
     # Create package with URL
     response = client.post("/packages", json={
         "name": "test-package",
         "version": "1.0.0",
         "metadata": {"url": "https://huggingface.co/test/model"}
-    })
+    }, headers={"X-Authorization": auth_token})
 
     assert response.status_code == 201
     package_id = response.get_json()["package"]["id"]
 
     # Try to download with invalid content type
-    response = client.get(f"/packages/{package_id}/download?content=invalid")
+    response = client.get(f"/packages/{package_id}/download?content=invalid", headers={"X-Authorization": auth_token})
 
     assert response.status_code == 400
     data = response.get_json()
@@ -120,7 +133,7 @@ def test_download_invalid_content_type(client, mock_model_resource):
 
 @patch("api_server.Model")
 @patch("api_server.ModelResource")
-def test_download_full_package(mock_resource_class, mock_model_class, client):
+def test_download_full_package(mock_resource_class, mock_model_class, client, auth_token):
     """Test successful full package download."""
     # Create a temporary directory with real files
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -162,13 +175,13 @@ def test_download_full_package(mock_resource_class, mock_model_class, client):
             "name": "test-model",
             "version": "1.0.0",
             "metadata": {"url": "https://huggingface.co/test/model"}
-        })
+        }, headers={"X-Authorization": auth_token})
 
         assert response.status_code == 201
         package_id = response.get_json()["package"]["id"]
 
         # Download package
-        response = client.get(f"/packages/{package_id}/download")
+        response = client.get(f"/packages/{package_id}/download", headers={"X-Authorization": auth_token})
 
         assert response.status_code == 200
         assert response.content_type == "application/zip"
@@ -186,7 +199,7 @@ def test_download_full_package(mock_resource_class, mock_model_class, client):
 
 @patch("api_server.Model")
 @patch("api_server.ModelResource")
-def test_download_weights_only(mock_resource_class, mock_model_class, client):
+def test_download_weights_only(mock_resource_class, mock_model_class, client, auth_token):
     """Test downloading only model weights."""
     # Create a temporary directory with real files
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -225,13 +238,13 @@ def test_download_weights_only(mock_resource_class, mock_model_class, client):
             "name": "test-model",
             "version": "1.0.0",
             "metadata": {"url": "https://huggingface.co/test/model"}
-        })
+        }, headers={"X-Authorization": auth_token})
 
         assert response.status_code == 201
         package_id = response.get_json()["package"]["id"]
 
         # Download weights only
-        response = client.get(f"/packages/{package_id}/download?content=weights")
+        response = client.get(f"/packages/{package_id}/download?content=weights", headers={"X-Authorization": auth_token})
 
         assert response.status_code == 200
         assert response.content_type == "application/zip"
@@ -246,7 +259,7 @@ def test_download_weights_only(mock_resource_class, mock_model_class, client):
 
 @patch("api_server.Model")
 @patch("api_server.ModelResource")
-def test_download_datasets_only(mock_resource_class, mock_model_class, client):
+def test_download_datasets_only(mock_resource_class, mock_model_class, client, auth_token):
     """Test downloading only datasets."""
     # Create a temporary directory with real files
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -285,13 +298,13 @@ def test_download_datasets_only(mock_resource_class, mock_model_class, client):
             "name": "test-model",
             "version": "1.0.0",
             "metadata": {"url": "https://huggingface.co/test/model"}
-        })
+        }, headers={"X-Authorization": auth_token})
 
         assert response.status_code == 201
         package_id = response.get_json()["package"]["id"]
 
         # Download datasets only
-        response = client.get(f"/packages/{package_id}/download?content=datasets")
+        response = client.get(f"/packages/{package_id}/download?content=datasets", headers={"X-Authorization": auth_token})
 
         assert response.status_code == 200
         assert response.content_type == "application/zip"
@@ -299,7 +312,7 @@ def test_download_datasets_only(mock_resource_class, mock_model_class, client):
 
 @patch("api_server.Model")
 @patch("api_server.ModelResource")
-def test_download_records_event(mock_resource_class, mock_model_class, client):
+def test_download_records_event(mock_resource_class, mock_model_class, client, auth_token):
     """Test that download records an event in storage."""
     # Create a temporary directory with real files
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -334,12 +347,12 @@ def test_download_records_event(mock_resource_class, mock_model_class, client):
             "name": "test-model",
             "version": "1.0.0",
             "metadata": {"url": "https://huggingface.co/test/model"}
-        })
+        }, headers={"X-Authorization": auth_token})
 
         package_id = response.get_json()["package"]["id"]
 
         # Download
-        response = client.get(f"/packages/{package_id}/download")
+        response = client.get(f"/packages/{package_id}/download", headers={"X-Authorization": auth_token})
 
         assert response.status_code == 200
 
@@ -347,21 +360,21 @@ def test_download_records_event(mock_resource_class, mock_model_class, client):
         # For now, just verify the download succeeded
 
 
-def test_download_content_types_are_case_sensitive(client, mock_model_resource):
+def test_download_content_types_are_case_sensitive(client, auth_token, mock_model_resource):
     """Test that content type parameter is case-sensitive."""
     # Create package
     response = client.post("/packages", json={
         "name": "test-package",
         "version": "1.0.0",
         "metadata": {"url": "https://huggingface.co/test/model"}
-    })
+    }, headers={"X-Authorization": auth_token})
 
     package_id = response.get_json()["package"]["id"]
 
     # Try uppercase (should fail)
-    response = client.get(f"/packages/{package_id}/download?content=FULL")
+    response = client.get(f"/packages/{package_id}/download?content=FULL", headers={"X-Authorization": auth_token})
     assert response.status_code == 400
 
     # Try mixed case (should fail)
-    response = client.get(f"/packages/{package_id}/download?content=Weights")
+    response = client.get(f"/packages/{package_id}/download?content=Weights", headers={"X-Authorization": auth_token})
     assert response.status_code == 400

@@ -1,7 +1,7 @@
 import re
-from dataclasses import dataclass
-from datetime import datetime
-from typing import Any, Dict, Optional
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional, Set
 
 
 @dataclass
@@ -197,3 +197,80 @@ class Package:
                     return False
         # Catch all
         return False
+
+
+@dataclass
+class User:
+    """Represents a user in the registry.
+
+    Attributes:
+        username: Unique username
+        password_hash: Bcrypt hashed password
+        is_admin: Whether user has admin privileges
+        permissions: Set of permissions (upload, search, download)
+        created_at: When user account was created
+    """
+
+    username: str
+    password_hash: str
+    is_admin: bool = False
+    permissions: Set[str] = field(default_factory=set)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def has_permission(self, permission: str) -> bool:
+        """Check if user has a specific permission.
+
+        Args:
+            permission: Permission to check (upload, search, download)
+
+        Returns:
+            bool: True if user has permission, False otherwise
+        """
+        return permission in self.permissions
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert user to dictionary (excludes password hash).
+
+        Returns:
+            Dict[str, Any]: User data as dictionary
+        """
+        return {
+            "username": self.username,
+            "is_admin": self.is_admin,
+            "permissions": list(self.permissions),
+            "created_at": self.created_at.isoformat(),
+        }
+
+
+@dataclass
+class Token:
+    """Represents an authentication token.
+
+    Attributes:
+        token: Token string
+        username: Associated username
+        created_at: When token was created
+        expires_at: When token expires
+        usage_count: Number of times token has been used
+        max_usage: Maximum number of uses (1000)
+    """
+
+    token: str
+    username: str
+    created_at: datetime
+    expires_at: datetime
+    usage_count: int = 0
+    max_usage: int = 1000
+
+    def is_valid(self) -> bool:
+        """Check if token is still valid.
+
+        Returns:
+            bool: True if token hasn't expired and hasn't exceeded usage limit
+        """
+        now = datetime.now(datetime.now().astimezone().tzinfo)
+        return now < self.expires_at and self.usage_count < self.max_usage
+
+    def increment_usage(self) -> None:
+        """Increment token usage counter."""
+        self.usage_count += 1

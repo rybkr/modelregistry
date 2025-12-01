@@ -17,8 +17,20 @@ def client():
         yield client
         storage.reset()  # Reset after each test
 
+@pytest.fixture
+def auth_token(client):
+    """Get authentication token for API requests."""
+    auth_data = {
+        "user": {"name": "ece30861defaultadminuser", "is_admin": True},
+        "secret": {"password": "correcthorsebatterystaple123(!__+@**(A\'\"`;DROP TABLE packages;"}
+    }
+    response = client.put("/api/authenticate", json=auth_data)
+    assert response.status_code == 200
+    return response.get_json()
 
-def test_upload_csv_file_success(client):
+
+
+def test_upload_csv_file_success(client, auth_token):
     """Test successful CSV file upload with valid data."""
     csv_content = """name,version,metadata
 package1,1.0.0,"{""description"": ""Test package 1""}"
@@ -31,7 +43,7 @@ package3,3.0.0,{}
     }
 
     response = client.post(
-        "/api/ingest/upload",
+        "/api/ingest/upload", headers={"X-Authorization": auth_token},
         content_type="multipart/form-data",
         data=data
     )
@@ -46,7 +58,7 @@ package3,3.0.0,{}
     assert json_data["packages"][2]["name"] == "package3"
 
 
-def test_upload_json_array_success(client):
+def test_upload_json_array_success(client, auth_token):
     """Test successful JSON file upload with array of packages."""
     json_content = """[
     {
@@ -66,7 +78,7 @@ def test_upload_json_array_success(client):
     }
 
     response = client.post(
-        "/api/ingest/upload",
+        "/api/ingest/upload", headers={"X-Authorization": auth_token},
         content_type="multipart/form-data",
         data=data
     )
@@ -79,7 +91,7 @@ def test_upload_json_array_success(client):
     assert json_data["packages"][1]["name"] == "json-package2"
 
 
-def test_upload_json_single_object_success(client):
+def test_upload_json_single_object_success(client, auth_token):
     """Test successful JSON file upload with single package object."""
     json_content = """{
     "name": "single-package",
@@ -92,7 +104,7 @@ def test_upload_json_single_object_success(client):
     }
 
     response = client.post(
-        "/api/ingest/upload",
+        "/api/ingest/upload", headers={"X-Authorization": auth_token},
         content_type="multipart/form-data",
         data=data
     )
@@ -104,10 +116,10 @@ def test_upload_json_single_object_success(client):
     assert json_data["packages"][0]["name"] == "single-package"
 
 
-def test_upload_no_file_error(client):
+def test_upload_no_file_error(client, auth_token):
     """Test error when no file is provided."""
     response = client.post(
-        "/api/ingest/upload",
+        "/api/ingest/upload", headers={"X-Authorization": auth_token},
         content_type="multipart/form-data",
         data={}
     )
@@ -117,14 +129,14 @@ def test_upload_no_file_error(client):
     assert "No file provided" in json_data["error"]
 
 
-def test_upload_empty_filename_error(client):
+def test_upload_empty_filename_error(client, auth_token):
     """Test error when file has empty filename."""
     data = {
         "file": (io.BytesIO(b"test"), "")
     }
 
     response = client.post(
-        "/api/ingest/upload",
+        "/api/ingest/upload", headers={"X-Authorization": auth_token},
         content_type="multipart/form-data",
         data=data
     )
@@ -134,14 +146,14 @@ def test_upload_empty_filename_error(client):
     assert "No file selected" in json_data["error"]
 
 
-def test_upload_invalid_file_type_error(client):
+def test_upload_invalid_file_type_error(client, auth_token):
     """Test error when invalid file type is uploaded."""
     data = {
         "file": (io.BytesIO(b"test content"), "test.txt")
     }
 
     response = client.post(
-        "/api/ingest/upload",
+        "/api/ingest/upload", headers={"X-Authorization": auth_token},
         content_type="multipart/form-data",
         data=data
     )
@@ -151,7 +163,7 @@ def test_upload_invalid_file_type_error(client):
     assert "Invalid file type" in json_data["error"]
 
 
-def test_upload_csv_missing_required_fields(client):
+def test_upload_csv_missing_required_fields(client, auth_token):
     """Test CSV upload with missing required fields."""
     csv_content = """name,version,metadata
 package1,1.0.0,{}
@@ -164,7 +176,7 @@ package3,,{}
     }
 
     response = client.post(
-        "/api/ingest/upload",
+        "/api/ingest/upload", headers={"X-Authorization": auth_token},
         content_type="multipart/form-data",
         data=data
     )
@@ -176,7 +188,7 @@ package3,,{}
     assert "warnings" in json_data
 
 
-def test_upload_json_missing_required_fields(client):
+def test_upload_json_missing_required_fields(client, auth_token):
     """Test JSON upload with missing required fields."""
     json_content = """[
     {
@@ -196,7 +208,7 @@ def test_upload_json_missing_required_fields(client):
     }
 
     response = client.post(
-        "/api/ingest/upload",
+        "/api/ingest/upload", headers={"X-Authorization": auth_token},
         content_type="multipart/form-data",
         data=data
     )
@@ -208,7 +220,7 @@ def test_upload_json_missing_required_fields(client):
     assert "warnings" in json_data
 
 
-def test_upload_empty_csv_error(client):
+def test_upload_empty_csv_error(client, auth_token):
     """Test error when CSV file is empty."""
     csv_content = """name,version,metadata
 """
@@ -218,7 +230,7 @@ def test_upload_empty_csv_error(client):
     }
 
     response = client.post(
-        "/api/ingest/upload",
+        "/api/ingest/upload", headers={"X-Authorization": auth_token},
         content_type="multipart/form-data",
         data=data
     )
@@ -228,7 +240,7 @@ def test_upload_empty_csv_error(client):
     assert "No valid package data found" in json_data["error"]
 
 
-def test_upload_empty_json_array_error(client):
+def test_upload_empty_json_array_error(client, auth_token):
     """Test error when JSON array is empty."""
     json_content = "[]"
 
@@ -237,7 +249,7 @@ def test_upload_empty_json_array_error(client):
     }
 
     response = client.post(
-        "/api/ingest/upload",
+        "/api/ingest/upload", headers={"X-Authorization": auth_token},
         content_type="multipart/form-data",
         data=data
     )
@@ -247,7 +259,7 @@ def test_upload_empty_json_array_error(client):
     assert "No valid package data found" in json_data["error"]
 
 
-def test_upload_invalid_json_error(client):
+def test_upload_invalid_json_error(client, auth_token):
     """Test error when JSON is malformed."""
     json_content = """{"name": "test", "version": "1.0.0"""
 
@@ -256,7 +268,7 @@ def test_upload_invalid_json_error(client):
     }
 
     response = client.post(
-        "/api/ingest/upload",
+        "/api/ingest/upload", headers={"X-Authorization": auth_token},
         content_type="multipart/form-data",
         data=data
     )
@@ -266,7 +278,7 @@ def test_upload_invalid_json_error(client):
     assert "Failed to process file" in json_data["error"]
 
 
-def test_upload_csv_without_metadata(client):
+def test_upload_csv_without_metadata(client, auth_token):
     """Test CSV upload without metadata column."""
     csv_content = """name,version
 package1,1.0.0
@@ -278,7 +290,7 @@ package2,2.0.0
     }
 
     response = client.post(
-        "/api/ingest/upload",
+        "/api/ingest/upload", headers={"X-Authorization": auth_token},
         content_type="multipart/form-data",
         data=data
     )
@@ -290,7 +302,7 @@ package2,2.0.0
     assert json_data["packages"][0]["metadata"] == {}
 
 
-def test_upload_json_without_metadata(client):
+def test_upload_json_without_metadata(client, auth_token):
     """Test JSON upload without metadata field."""
     json_content = """[
     {
@@ -304,7 +316,7 @@ def test_upload_json_without_metadata(client):
     }
 
     response = client.post(
-        "/api/ingest/upload",
+        "/api/ingest/upload", headers={"X-Authorization": auth_token},
         content_type="multipart/form-data",
         data=data
     )
@@ -316,7 +328,7 @@ def test_upload_json_without_metadata(client):
     assert json_data["packages"][0]["metadata"] == {}
 
 
-def test_packages_stored_correctly(client):
+def test_packages_stored_correctly(client, auth_token):
     """Test that uploaded packages are actually stored and retrievable."""
     csv_content = """name,version,metadata
 stored-package,5.0.0,"{""key"": ""value""}"
@@ -327,7 +339,7 @@ stored-package,5.0.0,"{""key"": ""value""}"
     }
 
     response = client.post(
-        "/api/ingest/upload",
+        "/api/ingest/upload", headers={"X-Authorization": auth_token},
         content_type="multipart/form-data",
         data=data
     )
@@ -345,7 +357,7 @@ stored-package,5.0.0,"{""key"": ""value""}"
     assert package_data["metadata"]["key"] == "value"
 
 
-def test_upload_all_invalid_rows_error(client):
+def test_upload_all_invalid_rows_error(client, auth_token):
     """Test error when all rows in file are invalid."""
     csv_content = """name,version,metadata
 ,1.0.0,{}
@@ -357,7 +369,7 @@ package2,,{}
     }
 
     response = client.post(
-        "/api/ingest/upload",
+        "/api/ingest/upload", headers={"X-Authorization": auth_token},
         content_type="multipart/form-data",
         data=data
     )

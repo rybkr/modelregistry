@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -22,13 +23,17 @@ from webdriver_manager.chrome import ChromeDriverManager
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 BASE_URL = "http://127.0.0.1:8000"
 
+# Default admin credentials
+DEFAULT_USERNAME = "ece30861defaultadminuser"
+DEFAULT_PASSWORD = "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE packages;"
+
 
 @contextmanager
 def _run_api_server() -> Iterator[subprocess.Popen]:
     """Start the Flask API server in a background process."""
     env = os.environ.copy()
     process = subprocess.Popen(
-        ["python3", "src/api_server.py"],
+        [sys.executable, "src/api_server.py"],
         cwd=str(PROJECT_ROOT),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -68,9 +73,29 @@ def api_server() -> Iterator[str]:
     with _run_api_server():
         _wait_for_server_ready()
         # Ensure we start from a clean registry state
-        requests.delete(f"{BASE_URL}/api/reset", timeout=5)
+        try:
+            # Try to reset if we can authenticate
+            token = _authenticate()
+            if token:
+                requests.delete(
+                    f"{BASE_URL}/api/reset",
+                    headers={"X-Authorization": token},
+                    timeout=5,
+                )
+        except Exception:
+            pass  # Ignore if reset fails
         yield BASE_URL
-        requests.delete(f"{BASE_URL}/api/reset", timeout=5)
+        # Clean up after tests
+        try:
+            token = _authenticate()
+            if token:
+                requests.delete(
+                    f"{BASE_URL}/api/reset",
+                    headers={"X-Authorization": token},
+                    timeout=5,
+                )
+        except Exception:
+            pass
 
 
 @pytest.fixture
@@ -102,7 +127,38 @@ def browser(api_server: str) -> Iterator[webdriver.Chrome]:
         driver.quit()
 
 
+def _authenticate(password: str = DEFAULT_PASSWORD) -> str | None:
+    """Authenticate and return token.
+
+    Args:
+        password: Password to use for authentication
+
+    Returns:
+        Authentication token string or None if authentication fails
+    """
+    payload = {
+        "user": {"name": DEFAULT_USERNAME, "is_admin": True},
+        "secret": {"password": password},
+    }
+    try:
+        response = requests.put(
+            f"{BASE_URL}/api/authenticate",
+            json=payload,
+            timeout=5,
+        )
+        if response.status_code == 200:
+            return response.json()  # Token is returned as JSON string
+        return None
+    except Exception:
+        return None
+
+
 def _create_package(name: str, version: str, url: str) -> None:
+    # Get auth token
+    token = _authenticate()
+    if not token:
+        raise RuntimeError("Failed to authenticate for package creation")
+
     payload = {
         "name": name,
         "version": version,
@@ -111,7 +167,12 @@ def _create_package(name: str, version: str, url: str) -> None:
             "readme": f"{name} README describing datasets and code examples.",
         },
     }
-    response = requests.post(f"{BASE_URL}/api/packages", json=payload, timeout=5)
+    response = requests.post(
+        f"{BASE_URL}/api/packages",
+        json=payload,
+        headers={"X-Authorization": token},
+        timeout=5
+    )
     response.raise_for_status()
 
 

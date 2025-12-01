@@ -1,10 +1,24 @@
 # Additional tests to increase coverage for api_server.py
 import io
+import pytest
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 from registry_models import Package
 from storage import storage
+
+
+
+@pytest.fixture
+def auth_token(client):
+    """Get authentication token for API requests."""
+    auth_data = {
+        "user": {"name": "ece30861defaultadminuser", "is_admin": True},
+        "secret": {"password": "correcthorsebatterystaple123(!__+@**(A\'\"`;DROP TABLE packages;"}
+    }
+    response = client.put("/api/authenticate", json=auth_data)
+    assert response.status_code == 200
+    return response.get_json()
 
 
 def test_health_endpoint(client):
@@ -21,7 +35,7 @@ def test_root_endpoint(client):
     assert "Model Registry API" in data["message"]
 
 
-def test_upload_package(client):
+def test_upload_package(client, auth_token):
     package_data = {
         "name": "test-model",
         "version": "1.0.0",
@@ -29,7 +43,7 @@ def test_upload_package(client):
         "metadata": {"description": "Test model"},
     }
 
-    response = client.post("/api/packages", json=package_data)
+    response = client.post("/api/packages", headers={"X-Authorization": auth_token}, json=package_data)
     assert response.status_code == 201
 
     data = response.get_json()
@@ -38,9 +52,9 @@ def test_upload_package(client):
     assert data["package"]["version"] == "1.0.0"
 
 
-def test_list_packages(client):
+def test_list_packages(client, auth_token):
     package_data = {"name": "test-model", "version": "1.0.0"}
-    client.post("/api/packages", json=package_data)
+    client.post("/api/packages", headers={"X-Authorization": auth_token}, json=package_data)
 
     response = client.get("/api/packages")
     assert response.status_code == 200
@@ -50,9 +64,9 @@ def test_list_packages(client):
     assert len(data["packages"]) == 1
 
 
-def test_get_package(client):
+def test_get_package(client, auth_token):
     package_data = {"name": "test-model", "version": "1.0.0"}
-    upload_response = client.post("/api/packages", json=package_data)
+    upload_response = client.post("/api/packages", headers={"X-Authorization": auth_token}, json=package_data)
     package_id = upload_response.get_json()["package"]["id"]
 
     response = client.get(f"/api/packages/{package_id}")
@@ -63,9 +77,9 @@ def test_get_package(client):
     assert data["name"] == "test-model"
 
 
-def test_delete_package(client):
+def test_delete_package(client, auth_token):
     package_data = {"name": "test-model", "version": "1.0.0"}
-    upload_response = client.post("/api/packages", json=package_data)
+    upload_response = client.post("/api/packages", headers={"X-Authorization": auth_token}, json=package_data)
     package_id = upload_response.get_json()["package"]["id"]
 
     response = client.delete(f"/api/packages/{package_id}")
@@ -75,9 +89,9 @@ def test_delete_package(client):
     assert get_response.status_code == 404
 
 
-def test_reset_registry(client):
+def test_reset_registry(client, auth_token):
     package_data = {"name": "test-model", "version": "1.0.0"}
-    client.post("/api/packages", json=package_data)
+    client.post("/api/packages", headers={"X-Authorization": auth_token}, json=package_data)
 
     # Authenticate to get token (required by OpenAPI spec)
     # Note: autograder uses "packages" not "artifacts" in the password
@@ -300,32 +314,32 @@ def test_api_root_endpoint(client):
     assert "Model Registry API" in data["message"]
 
 
-def test_upload_package_no_data(client):
+def test_upload_package_no_data(client, auth_token):
     """Test upload_package with no data."""
     # Flask returns 500 when json=None, but we can test with empty data
-    response = client.post("/api/packages", data="", content_type="application/json")
+    response = client.post("/api/packages", headers={"X-Authorization": auth_token}, data="", content_type="application/json")
     assert response.status_code in [400, 500]  # Either is acceptable
 
 
-def test_upload_package_missing_field(client):
+def test_upload_package_missing_field(client, auth_token):
     """Test upload_package with missing required field."""
-    response = client.post("/api/packages", json={"name": "test"})
+    response = client.post("/api/packages", headers={"X-Authorization": auth_token}, json={"name": "test"})
     assert response.status_code == 400
     assert "Missing required field" in response.get_json()["error"]
 
 
-def test_upload_package_exception(client):
+def test_upload_package_exception(client, auth_token):
     """Test upload_package exception handling."""
     with patch("api_server.storage.create_package", side_effect=Exception("Storage error")):
-        response = client.post("/api/packages", json={"name": "test", "version": "1.0.0"})
+        response = client.post("/api/packages", headers={"X-Authorization": auth_token}, json={"name": "test", "version": "1.0.0"})
         assert response.status_code == 500
 
 
-def test_list_packages_sorting(client):
+def test_list_packages_sorting(client, auth_token):
     """Test list_packages with different sort fields."""
     # Create multiple packages
     for i in range(3):
-        client.post("/api/packages", json={"name": f"package-{i}", "version": f"{i}.0.0"})
+        client.post("/api/packages", headers={"X-Authorization": auth_token}, json={"name": f"package-{i}", "version": f"{i}.0.0"})
     
     # Test sort by date
     response = client.get("/api/packages?sort-field=date")
@@ -352,10 +366,10 @@ def test_list_packages_exception(client):
         assert response.status_code == 500
 
 
-def test_get_package_html(client):
+def test_get_package_html(client, auth_token):
     """Test get_package returns HTML when Accept header requests HTML."""
     package_data = {"name": "test-model", "version": "1.0.0"}
-    upload_response = client.post("/api/packages", json=package_data)
+    upload_response = client.post("/api/packages", headers={"X-Authorization": auth_token}, json=package_data)
     package_id = upload_response.get_json()["package"]["id"]
     
     response = client.get(
@@ -366,10 +380,10 @@ def test_get_package_html(client):
     assert response.content_type == "text/html; charset=utf-8"
 
 
-def test_get_package_exception(client):
+def test_get_package_exception(client, auth_token):
     """Test get_package exception handling."""
     package_data = {"name": "test-model", "version": "1.0.0"}
-    upload_response = client.post("/api/packages", json=package_data)
+    upload_response = client.post("/api/packages", headers={"X-Authorization": auth_token}, json=package_data)
     package_id = upload_response.get_json()["package"]["id"]
     
     with patch("api_server.storage.get_package", side_effect=Exception("Storage error")):
@@ -383,10 +397,10 @@ def test_delete_package_not_found(client):
     assert response.status_code == 404
 
 
-def test_delete_package_exception(client):
+def test_delete_package_exception(client, auth_token):
     """Test delete_package exception handling."""
     package_data = {"name": "test-model", "version": "1.0.0"}
-    upload_response = client.post("/api/packages", json=package_data)
+    upload_response = client.post("/api/packages", headers={"X-Authorization": auth_token}, json=package_data)
     package_id = upload_response.get_json()["package"]["id"]
     
     with patch("api_server.storage.delete_package", side_effect=Exception("Storage error")):
@@ -394,40 +408,40 @@ def test_delete_package_exception(client):
         assert response.status_code == 500
 
 
-def test_download_package_no_url(client):
+def test_download_package_no_url(client, auth_token):
     """Test download_package with package that has no URL."""
     package_data = {"name": "test-model", "version": "1.0.0", "metadata": {}}
-    upload_response = client.post("/api/packages", json=package_data)
+    upload_response = client.post("/api/packages", headers={"X-Authorization": auth_token}, json=package_data)
     package_id = upload_response.get_json()["package"]["id"]
     
-    response = client.get(f"/packages/{package_id}/download")
+    response = client.get(f"/packages/{package_id}/download", headers={"X-Authorization": auth_token})
     assert response.status_code == 400
     assert "no associated model URL" in response.get_json()["error"]
 
 
-def test_download_package_invalid_content_type(client):
+def test_download_package_invalid_content_type(client, auth_token):
     """Test download_package with invalid content type."""
     package_data = {
         "name": "test-model",
         "version": "1.0.0",
         "metadata": {"url": "https://huggingface.co/test-org/test-model"}
     }
-    upload_response = client.post("/api/packages", json=package_data)
+    upload_response = client.post("/api/packages", headers={"X-Authorization": auth_token}, json=package_data)
     package_id = upload_response.get_json()["package"]["id"]
     
-    response = client.get(f"/packages/{package_id}/download?content=invalid")
+    response = client.get(f"/packages/{package_id}/download?content=invalid", headers={"X-Authorization": auth_token})
     assert response.status_code == 400
     assert "Invalid content type" in response.get_json()["error"]
 
 
-def test_download_package_no_files_found(client):
+def test_download_package_no_files_found(client, auth_token):
     """Test download_package when no files match."""
     package_data = {
         "name": "test-model",
         "version": "1.0.0",
         "metadata": {"url": "https://huggingface.co/test-org/test-model"}
     }
-    upload_response = client.post("/api/packages", json=package_data)
+    upload_response = client.post("/api/packages", headers={"X-Authorization": auth_token}, json=package_data)
     package_id = upload_response.get_json()["package"]["id"]
     
     with patch("api_server.ModelResource") as mock_resource:
@@ -441,34 +455,34 @@ def test_download_package_no_files_found(client):
         mock_instance.open_files.return_value = mock_context
         mock_resource.return_value = mock_instance
         
-        response = client.get(f"/packages/{package_id}/download?content=weights")
+        response = client.get(f"/packages/{package_id}/download?content=weights", headers={"X-Authorization": auth_token})
         # May return 400 or 500 depending on where exception occurs
         assert response.status_code in [400, 500]
 
 
-def test_download_package_exception(client):
+def test_download_package_exception(client, auth_token):
     """Test download_package exception handling."""
     package_data = {
         "name": "test-model",
         "version": "1.0.0",
         "metadata": {"url": "https://huggingface.co/test-org/test-model"}
     }
-    upload_response = client.post("/api/packages", json=package_data)
+    upload_response = client.post("/api/packages", headers={"X-Authorization": auth_token}, json=package_data)
     package_id = upload_response.get_json()["package"]["id"]
     
     with patch("api_server.ModelResource", side_effect=Exception("Model error")):
-        response = client.get(f"/packages/{package_id}/download")
+        response = client.get(f"/packages/{package_id}/download", headers={"X-Authorization": auth_token})
         assert response.status_code == 500
 
 
-def test_rate_package(client):
+def test_rate_package(client, auth_token):
     """Test rate_package endpoint."""
     package_data = {
         "name": "test-model",
         "version": "1.0.0",
         "metadata": {"url": "https://huggingface.co/test-org/test-model"}
     }
-    upload_response = client.post("/api/packages", json=package_data)
+    upload_response = client.post("/api/packages", headers={"X-Authorization": auth_token}, json=package_data)
     package_id = upload_response.get_json()["package"]["id"]
     
     with patch("api_server.compute_all_metrics") as mock_metrics:
@@ -482,10 +496,10 @@ def test_rate_package(client):
         assert response.status_code in [200, 400, 500]
 
 
-def test_rate_package_no_url(client):
+def test_rate_package_no_url(client, auth_token):
     """Test rate_package with package that has no URL."""
     package_data = {"name": "test-model", "version": "1.0.0", "metadata": {}}
-    upload_response = client.post("/api/packages", json=package_data)
+    upload_response = client.post("/api/packages", headers={"X-Authorization": auth_token}, json=package_data)
     package_id = upload_response.get_json()["package"]["id"]
     
     response = client.get(f"/packages/{package_id}/rate")
@@ -493,14 +507,14 @@ def test_rate_package_no_url(client):
     assert "No URL" in response.get_json()["error"]
 
 
-def test_rate_package_exception(client):
+def test_rate_package_exception(client, auth_token):
     """Test rate_package exception handling."""
     package_data = {
         "name": "test-model",
         "version": "1.0.0",
         "metadata": {"url": "https://huggingface.co/test-org/test-model"}
     }
-    upload_response = client.post("/api/packages", json=package_data)
+    upload_response = client.post("/api/packages", headers={"X-Authorization": auth_token}, json=package_data)
     package_id = upload_response.get_json()["package"]["id"]
     
     with patch("api_server.compute_all_metrics", side_effect=Exception("Metrics error")):
@@ -508,7 +522,7 @@ def test_rate_package_exception(client):
         assert response.status_code == 500
 
 
-def test_ingest_model_threshold_failure(client):
+def test_ingest_model_threshold_failure(client, auth_token):
     """Test ingest_model with metrics below threshold."""
     url = "https://huggingface.co/test-org/test-model"
     
@@ -529,12 +543,12 @@ def test_ingest_model_threshold_failure(client):
             mock_net_instance = MagicMock()
             mock_net_score.return_value = mock_net_instance
             
-            response = client.post("/api/ingest", json={"url": url})
+            response = client.post("/api/ingest", headers={"X-Authorization": auth_token}, json={"url": url})
             assert response.status_code == 400
             assert "Failed threshold" in response.get_json()["error"]
 
 
-def test_ingest_model_size_score_threshold(client):
+def test_ingest_model_size_score_threshold(client, auth_token):
     """Test ingest_model with size_score threshold check."""
     url = "https://huggingface.co/test-org/test-model"
     
@@ -562,12 +576,12 @@ def test_ingest_model_size_score_threshold(client):
             mock_net_instance = MagicMock()
             mock_net_score.return_value = mock_net_instance
             
-            response = client.post("/api/ingest", json={"url": url})
+            response = client.post("/api/ingest", headers={"X-Authorization": auth_token}, json={"url": url})
             assert response.status_code == 400
             assert "Failed threshold" in response.get_json()["error"]
 
 
-def test_ingest_model_invalid_metric_type(client):
+def test_ingest_model_invalid_metric_type(client, auth_token):
     """Test ingest_model with invalid metric type."""
     url = "https://huggingface.co/test-org/test-model"
     
@@ -585,57 +599,57 @@ def test_ingest_model_invalid_metric_type(client):
             mock_net_instance = MagicMock()
             mock_net_score.return_value = mock_net_instance
             
-            response = client.post("/api/ingest", json={"url": url})
+            response = client.post("/api/ingest", headers={"X-Authorization": auth_token}, json={"url": url})
             assert response.status_code == 400
             assert "Failed threshold" in response.get_json()["error"]
 
 
-def test_ingest_model_exception(client):
+def test_ingest_model_exception(client, auth_token):
     """Test ingest_model exception handling."""
     url = "https://huggingface.co/test-org/test-model"
     
     with patch("api_server.ModelResource", side_effect=Exception("Model error")):
-        response = client.post("/api/ingest", json={"url": url})
+        response = client.post("/api/ingest", headers={"X-Authorization": auth_token}, json={"url": url})
         assert response.status_code == 500
 
 
-def test_ingest_upload_csv_metadata_parse_error(client):
+def test_ingest_upload_csv_metadata_parse_error(client, auth_token):
     """Test ingest_upload with CSV metadata JSON parse error."""
     csv_content = "name,version,metadata\ntest,1.0.0,{invalid json}"
     files = {"file": (io.BytesIO(csv_content.encode()), "test.csv")}
     
-    response = client.post("/api/ingest/upload", data=files)
+    response = client.post("/api/ingest/upload", headers={"X-Authorization": auth_token}, data=files)
     # Should still create package but with empty metadata
     assert response.status_code in [201, 400]
 
 
-def test_ingest_upload_json_single_object(client):
+def test_ingest_upload_json_single_object(client, auth_token):
     """Test ingest_upload with JSON single object."""
     json_content = '{"name": "test", "version": "1.0.0"}'
     files = {"file": (io.BytesIO(json_content.encode()), "test.json")}
     
-    response = client.post("/api/ingest/upload", data=files)
+    response = client.post("/api/ingest/upload", headers={"X-Authorization": auth_token}, data=files)
     assert response.status_code == 201
 
 
-def test_ingest_upload_json_invalid(client):
+def test_ingest_upload_json_invalid(client, auth_token):
     """Test ingest_upload with invalid JSON."""
     json_content = "{invalid json}"
     files = {"file": (io.BytesIO(json_content.encode()), "test.json")}
     
-    response = client.post("/api/ingest/upload", data=files)
+    response = client.post("/api/ingest/upload", headers={"X-Authorization": auth_token}, data=files)
     # Invalid JSON raises exception, returns 500
     assert response.status_code in [400, 500]
 
 
-def test_ingest_upload_exception(client):
+def test_ingest_upload_exception(client, auth_token):
     """Test ingest_upload exception handling."""
     csv_content = "name,version\ntest,1.0.0"
     files = {"file": (io.BytesIO(csv_content.encode()), "test.csv")}
     
     # Patch parse_csv_content to raise exception
     with patch("api_server.parse_csv_content", side_effect=Exception("Parse error")):
-        response = client.post("/api/ingest/upload", data=files)
+        response = client.post("/api/ingest/upload", headers={"X-Authorization": auth_token}, data=files)
         assert response.status_code == 500
 
 
