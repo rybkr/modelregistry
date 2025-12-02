@@ -1364,6 +1364,8 @@ def create_artifact(artifact_type):
         if package.metadata.get("url") == url:
             return jsonify({"error": "Artifact with this URL already exists"}), 409
 
+    package_name = ""
+    metadata = dict()
     if artifact_type == "model":
         # Ingest and compute metrics (similar to /api/ingest)
         try:
@@ -1386,11 +1388,21 @@ def create_artifact(artifact_type):
         scores = {}
         for name, metric in results.items():
             scores[name] = {"score": metric.value, "latency_ms": metric.latency_ms}
+        metadata={"url": url, "scores": scores}
+        package_name = model_name
+
     elif artifact_type == "code":
         code = CodeResource(url)
         metadata = code.fetch_metadata()
-        breakpoint()
-
+        package_name = metadata.get("name")
+        metadata = {"url": url}
+    else:
+        # Must be dataset
+        dataset = DatasetResource(url)
+        metadata = dataset.fetch_metadata()
+        package_name = metadata.get("id").split("/")[1]
+        metadata = {"url": url}
+        logger.info(f"Uploading dataset with name {package_name}")
 
     # Create package
     package_id = str(uuid.uuid4())
