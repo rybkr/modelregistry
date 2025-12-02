@@ -4,7 +4,7 @@ from collections import Counter, deque
 from datetime import datetime, timedelta, timezone
 from threading import Lock
 from typing import Dict, List, Optional, Tuple
-import re
+import regex as re
 import threading
 import logging
 
@@ -41,6 +41,7 @@ def is_safe_regex(pattern: str) -> bool:
         r'[+*?]\s*[+*?]',               # ++ or ** or +* etc.
         r'\([^)]*[+*?]\s*\)\s*\{',      # (x+){n,m}
         r'\{[^}]*\}\s*[+*?]',           # {n,m}+ or {n,m}*
+        r'\([^)]*}\s*\)\s*\{',          #(x{n,m}){n,m}
     ]
 
     for danger_pattern in dangerous_patterns:
@@ -52,8 +53,9 @@ def is_safe_regex(pattern: str) -> bool:
         if match:
             logger.warning(f"Regex pattern rejected: dangerous pattern detected ({danger_pattern})")
             return False
+        logger.info(f"Passed check against: {danger_pattern}")
 
-    logger.debug(f"Regex pattern passed validation: {pattern}")
+    logger.info(f"Regex pattern passed validation: {pattern}")
     return True
 
 
