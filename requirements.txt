@@ -11,3 +11,4 @@ selenium>=4.27
 webdriver-manager>=4.0
 pytest
 pytest-cov
+regex>=2025.11.3
