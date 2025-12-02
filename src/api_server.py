@@ -217,7 +217,7 @@ def validate_artifact_id(artifact_id: str) -> bool:
     Returns:
         bool: True if valid, False otherwise
     """
-    import re
+    import regex as re
     return bool(re.match(r'^[a-zA-Z0-9\-]+$', artifact_id))
 
 
