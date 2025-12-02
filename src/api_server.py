@@ -20,6 +20,7 @@ from metrics_engine import compute_all_metrics
 from metrics.net_score import NetScore
 from models import Model
 from resources.model_resource import ModelResource
+from resources.code_resource import CodeResource
 
 # Configure logging for debugging authentication and reset issues
 logging.basicConfig(
@@ -1356,39 +1357,47 @@ def create_artifact(artifact_type):
         return jsonify({"error": "URL required in request body"}), 400
 
     url = data["url"]
+    logger.info(f"Uploading {artifact_type}: {url}")
 
     # Check if artifact already exists (by URL)
     for package in storage.packages.values():
         if package.metadata.get("url") == url:
             return jsonify({"error": "Artifact with this URL already exists"}), 409
 
-    # Ingest and compute metrics (similar to /api/ingest)
-    try:
-        model = Model(model=ModelResource(url=url))
-        results = compute_all_metrics(model)
-    except Exception as e:
-        # If rating fails, return 424
-        return jsonify({"error": f"Failed to compute metrics: {str(e)}"}), 424
+    if artifact_type == "model":
+        # Ingest and compute metrics (similar to /api/ingest)
+        try:
+            model = Model(model=ModelResource(url=url))
+            results = compute_all_metrics(model)
+        except Exception as e:
+            # If rating fails, return 424
+            return jsonify({"error": f"Failed to compute metrics: {str(e)}"}), 424
 
-    # Compute net_score
-    net_score = NetScore()
-    net_score.evaluate(list(results.values()))
-    results[net_score.name] = net_score
+        # Compute net_score
+        net_score = NetScore()
+        net_score.evaluate(list(results.values()))
+        results[net_score.name] = net_score
 
-    # Extract name from URL
-    parts = url.rstrip("/").split("/")
-    model_name = parts[-1] if parts else "unknown"
+        # Extract name from URL
+        parts = url.rstrip("/").split("/")
+        model_name = parts[-1] if parts else "unknown"
 
-    # Store scores
-    scores = {}
-    for name, metric in results.items():
-        scores[name] = {"score": metric.value, "latency_ms": metric.latency_ms}
+        # Store scores
+        scores = {}
+        for name, metric in results.items():
+            scores[name] = {"score": metric.value, "latency_ms": metric.latency_ms}
+    elif artifact_type == "code":
+        code = CodeResource(url)
+        metadata = code.fetch_metadata()
+        breakpoint()
+
 
     # Create package
     package_id = str(uuid.uuid4())
     package = Package(
         id=package_id,
         name=model_name,
+        type=artifact_type,
         version="1.0.0",
         uploaded_by=DEFAULT_USERNAME,
         upload_timestamp=datetime.utcnow(),

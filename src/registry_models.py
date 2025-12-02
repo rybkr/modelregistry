@@ -22,6 +22,7 @@ class Package:
     id: str
     name: str
     version: str
+    type: str # One of 'artifact', 'model', 'code'
     uploaded_by: str
     upload_timestamp: datetime
     size_bytes: int
@@ -39,6 +40,7 @@ class Package:
             "name": self.name,
             "version": self.version,
             "uploaded_by": self.uploaded_by,
+            "type": self.type,
             "upload_timestamp": self.upload_timestamp.isoformat(),
             "size_bytes": self.size_bytes,
             "metadata": self.metadata,
