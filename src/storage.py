@@ -4,8 +4,7 @@ from collections import Counter, deque
 from datetime import datetime, timedelta, timezone
 from threading import Lock
 from typing import Dict, List, Optional, Tuple
-import re
-import threading
+import regex as re
 import logging
 
 from registry_models import Package
@@ -13,99 +12,11 @@ from registry_models import Package
 logger = logging.getLogger('storage')
 
 
-def is_safe_regex(pattern: str) -> bool:
-    """Validate regex pattern to prevent ReDoS attacks.
-
-    Checks for dangerous patterns that can cause catastrophic backtracking:
-    - Nested quantifiers like (a+)+ or (a*)*
-    - Adjacent quantifiers like a++ or a**
-    - Excessive length
-
-    Args:
-        pattern: Regex pattern string to validate
-
-    Returns:
-        bool: True if pattern is safe, False if potentially dangerous
-    """
-    logger.info(f"Validating regex pattern: {pattern}")
-
-    # Reject patterns that are too long
-    if len(pattern) > 100:
-        logger.warning(f"Regex pattern rejected: pattern too long ({len(pattern)} > 100)")
-        return False
-
-    # Check for nested quantifiers: (...)+ or (...)* or (...)?
-    # followed by another quantifier
-    dangerous_patterns = [
-        r'\([^)]*[+*?]\s*\)\s*[+*?]',  # (x+)+ or (x*)* or (x?)?
-        r'[+*?]\s*[+*?]',               # ++ or ** or +* etc.
-        r'\([^)]*[+*?]\s*\)\s*\{',      # (x+){n,m}
-        r'\{[^}]*\}\s*[+*?]',           # {n,m}+ or {n,m}*
-    ]
-
-    for danger_pattern in dangerous_patterns:
-        timed_out, match = regex_validate_with_timeout(danger_pattern, pattern, timeout_seconds=0.1)
-        if timed_out:
-            # Timeout or exception occurred - treat as unsafe
-            logger.warning(f"Regex pattern validation timed out or failed for pattern: {pattern}")
-            return False
-        if match:
-            logger.warning(f"Regex pattern rejected: dangerous pattern detected ({danger_pattern})")
-            return False
-
-    logger.debug(f"Regex pattern passed validation: {pattern}")
-    return True
-
-
-def regex_validate_with_timeout(pattern_str: str, text: str, timeout_seconds: float = 0.1) -> (bool, Optional[re.Match]):
-    """Execute regex validation search with timeout protection.
-
-    Used for validating regex patterns against dangerous patterns.
-    Uses threading to implement timeout since signal.alarm() doesn't work
-    in multi-threaded Flask applications.
-
-    Args:
-        pattern_str: Regex pattern string to compile and use
-        text: Text to search
-        timeout_seconds: Maximum time allowed for search (default 0.1s)
-
-    Returns:
-        bool: true if timed out, false otherwise
-        Optional[re.Match]: Match object if found within timeout, None otherwise
-    """
-    result = [None]  # Use list to allow modification in nested function
-    exception = [None]
-
-    def search():
-        try:
-            compiled_pattern = re.compile(pattern_str)
-            result[0] = compiled_pattern.search(text)
-        except Exception as e:
-            exception[0] = e
-
-    thread = threading.Thread(target=search)
-    thread.daemon = True
-    thread.start()
-    thread.join(timeout=timeout_seconds)
-
-    if thread.is_alive():
-        # Timeout occurred - thread is still running
-        # Note: We can't actually kill the thread, but we return None
-        # The thread will eventually finish in background
-        return True, None
-
-    if exception[0]:
-        # Exception occurred during search
-        return True, None
-
-    return False, result[0]
-
-
 def regex_search_with_timeout(pattern: re.Pattern, text: str, timeout_seconds: float = 0.5) -> Optional[re.Match]:
-    """Execute regex search with timeout protection.
+    """Execute regex search with native timeout protection.
 
-    Uses threading to implement timeout since signal.alarm() doesn't work
-    in multi-threaded Flask applications.
+    Uses the regex module's native timeout support which can interrupt
+    CPU-bound operations at the C level.
 
     Args:
         pattern: Compiled regex pattern
@@ -115,31 +26,38 @@ def regex_search_with_timeout(pattern: re.Pattern, text: str, timeout_seconds: f
     Returns:
         Optional[re.Match]: Match object if found within timeout, None otherwise
     """
-    result = [None]  # Use list to allow modification in nested function
-    exception = [None]
-
-    def search():
-        try:
-            result[0] = pattern.search(text)
-        except Exception as e:
-            exception[0] = e
-
-    thread = threading.Thread(target=search)
-    thread.daemon = True
-    thread.start()
-    thread.join(timeout=timeout_seconds)
-
-    if thread.is_alive():
-        # Timeout occurred - thread is still running
-        # Note: We can't actually kill the thread, but we return None
-        # The thread will eventually finish in background
+    try:
+        return pattern.search(text, timeout=timeout_seconds)
+    except TimeoutError:
+        logger.warning(f"Regex search timed out")
+        return None
+    except Exception as e:
+        logger.warning(f"Regex search failed: {str(e)}")
         return None
 
-    if exception[0]:
-        # Exception occurred during search
-        return None
 
-    return result[0]
+def regex_compile_with_timeout(pattern_str: str, flags: int = 0, timeout_seconds: float = 0.5) -> Optional[re.Pattern]:
+    """Compile regex pattern. Timeout will be applied during search operations.
+
+    Note: The regex module's compile() doesn't support timeout parameter.
+    Timeout protection is applied during search/match operations instead.
+
+    Args:
+        pattern_str: Regex pattern string to compile
+        flags: Regex flags (e.g., re.IGNORECASE)
+        timeout_seconds: Not used in compilation, but kept for API consistency.
+                        Timeout is applied during search operations.
+
+    Returns:
+        Optional[re.Pattern]: Compiled pattern if successful, None otherwise
+    """
+    try:
+        # regex.compile() doesn't support timeout parameter
+        # Timeout will be applied during search operations
+        return re.compile(pattern_str, flags)
+    except Exception as e:
+        logger.warning(f"Regex pattern compilation failed: {pattern_str}, error: {str(e)}")
+        return None
 
 
 class RegistryStorage:
@@ -231,30 +149,24 @@ class RegistryStorage:
         """Search packages by name or README content.
 
         Searches package names and README metadata for matches.
-        Implements ReDoS protection for regex searches with pattern validation
-        and timeout mechanisms.
+        Implements ReDoS protection for regex searches using timeout mechanisms.
 
         Args:
             query: Search string or regex pattern
             use_regex: If True, treat query as regex pattern
 
         Returns:
-            List[Package]: Matching packages, empty list if regex invalid or unsafe
+            List[Package]: Matching packages, empty list if regex invalid
         """
         results = []
         if use_regex:
             logger.info(f"Regex search initiated with pattern: {query}")
-            # Validate regex pattern for safety
-            if not is_safe_regex(query):
-                # Reject potentially dangerous patterns
-                logger.warning(f"Regex search rejected: pattern failed safety validation: {query}")
-                return []
 
-            # Compile pattern
-            try:
-                pattern = re.compile(query, re.IGNORECASE)
-            except re.error as e:
-                logger.warning(f"Regex pattern compilation failed: {query}, error: {str(e)}")
+            # Compile pattern with timeout protection
+            pattern = regex_compile_with_timeout(query, re.IGNORECASE, timeout_seconds=0.5)
+            if pattern is None:
+                # Compilation timed out or failed
+                logger.warning(f"Regex search rejected: pattern compilation timed out or failed: {query}")
                 return []
 
             # Search with timeout protection
