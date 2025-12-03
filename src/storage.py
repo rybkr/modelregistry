@@ -7,8 +7,9 @@ from typing import Dict, List, Optional, Tuple
 import re
 import threading
 import logging
+import bcrypt
 
-from registry_models import Package
+from registry_models import Package, User, Token
 
 logger = logging.getLogger('storage')
 
@@ -152,6 +153,8 @@ class RegistryStorage:
     def __init__(self):
         """Initialize empty package storage."""
         self.packages: Dict[str, Package] = {}
+        self.users: Dict[str, User] = {}
+        self.tokens: Dict[str, Token] = {}
         self._activity_log: deque[dict] = deque(maxlen=1024)
         self._log_entries: deque[dict] = deque(maxlen=2048)
         self._lock = Lock()
@@ -161,6 +164,8 @@ class RegistryStorage:
             "package_deleted",
             "metrics_evaluated",
             "registry_reset",
+            "user_registered",
+            "user_deleted",
         ]
         self.reset()
 
@@ -169,16 +174,24 @@ class RegistryStorage:
 
         Performs a complete reset to initial state, clearing:
         - All packages (artifacts)
+        - All users (except default admin)
+        - All tokens (except default token)
         - Activity logs
         - Log entries
 
         This method is thread-safe and ensures complete cleanup.
+        Initializes the default admin user with all permissions.
         """
         with self._lock:
             # Create a new empty dict to ensure complete reset
             self.packages = {}
+            self.users = {}
+            self.tokens = {}
             self._activity_log.clear()
             self._log_entries.clear()
+
+            # Initialize default admin user
+            self._initialize_default_user()
 
     def create_package(self, package: Package) -> Package:
         """Store a new package.
@@ -426,6 +439,201 @@ class RegistryStorage:
                 return None
 
         return package
+
+    # User management methods -------------------------------------------------
+
+    def _initialize_default_user(self):
+        """Initialize the default admin user.
+
+        Creates the default admin user with username 'ece30861defaultadminuser'
+        and password 'correcthorsebatterystaple123(!__+@**(A'"`;DROP TABLE packages;'
+        This user has admin privileges and all permissions.
+        """
+        default_username = "ece30861defaultadminuser"
+        default_password = "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE packages;"
+
+        # Hash the password using bcrypt
+        password_hash = bcrypt.hashpw(default_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+        # Create default admin user with all permissions
+        default_user = User(
+            username=default_username,
+            password_hash=password_hash,
+            is_admin=True,
+            permissions={"upload", "search", "download"},
+            created_at=datetime.now(timezone.utc)
+        )
+
+        self.users[default_username] = default_user
+        logger.info(f"Initialized default admin user: {default_username}")
+
+    def create_user(self, username: str, password: str, is_admin: bool = False,
+                   permissions: Optional[set] = None) -> User:
+        """Create a new user.
+
+        Args:
+            username: Unique username
+            password: Plain text password (will be hashed)
+            is_admin: Whether user has admin privileges
+            permissions: Set of permissions (upload, search, download)
+
+        Returns:
+            User: The created user
+
+        Raises:
+            ValueError: If username already exists
+        """
+        if username in self.users:
+            raise ValueError(f"User {username} already exists")
+
+        # Hash the password
+        password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+        # Default permissions if not provided
+        if permissions is None:
+            permissions = set()
+
+        user = User(
+            username=username,
+            password_hash=password_hash,
+            is_admin=is_admin,
+            permissions=permissions,
+            created_at=datetime.now(timezone.utc)
+        )
+
+        self.users[username] = user
+        self.record_event("user_registered", actor=username, details={"is_admin": is_admin})
+        logger.info(f"Created user: {username}, admin={is_admin}, permissions={permissions}")
+        return user
+
+    def get_user(self, username: str) -> Optional[User]:
+        """Get a user by username.
+
+        Args:
+            username: Username to retrieve
+
+        Returns:
+            Optional[User]: User if found, None otherwise
+        """
+        return self.users.get(username)
+
+    def delete_user(self, username: str) -> Optional[User]:
+        """Delete a user by username.
+
+        Args:
+            username: Username to delete
+
+        Returns:
+            Optional[User]: Deleted user if found, None otherwise
+        """
+        user = self.users.pop(username, None)
+        if user:
+            # Also delete all tokens for this user
+            tokens_to_delete = [token for token, token_obj in self.tokens.items()
+                              if token_obj.username == username]
+            for token in tokens_to_delete:
+                del self.tokens[token]
+            self.record_event("user_deleted", actor=username)
+            logger.info(f"Deleted user: {username}")
+        return user
+
+    def verify_password(self, username: str, password: str) -> bool:
+        """Verify a user's password.
+
+        Args:
+            username: Username
+            password: Plain text password to verify
+
+        Returns:
+            bool: True if password is correct, False otherwise
+        """
+        user = self.users.get(username)
+        if not user:
+            return False
+
+        try:
+            return bcrypt.checkpw(password.encode('utf-8'), user.password_hash.encode('utf-8'))
+        except Exception as e:
+            logger.error(f"Error verifying password for {username}: {e}")
+            return False
+
+    # Token management methods ------------------------------------------------
+
+    def create_token(self, username: str) -> Token:
+        """Create an authentication token for a user.
+
+        Token is valid for 1000 API calls or 10 hours, whichever comes first.
+
+        Args:
+            username: Username to create token for
+
+        Returns:
+            Token: The created token
+
+        Raises:
+            ValueError: If user doesn't exist
+        """
+        if username not in self.users:
+            raise ValueError(f"User {username} not found")
+
+        import uuid
+        token_str = f"bearer {str(uuid.uuid4())}"
+        now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(hours=10)
+
+        token = Token(
+            token=token_str,
+            username=username,
+            created_at=now,
+            expires_at=expires_at,
+            usage_count=0,
+            max_usage=1000
+        )
+
+        self.tokens[token_str] = token
+        logger.info(f"Created token for user {username}, expires at {expires_at}")
+        return token
+
+    def get_token(self, token_str: str) -> Optional[Token]:
+        """Get a token by token string.
+
+        Args:
+            token_str: Token string
+
+        Returns:
+            Optional[Token]: Token if found and valid, None otherwise
+        """
+        token = self.tokens.get(token_str)
+        if token and token.is_valid():
+            return token
+        return None
+
+    def validate_and_use_token(self, token_str: str) -> Optional[str]:
+        """Validate token and increment usage counter.
+
+        Args:
+            token_str: Token string to validate
+
+        Returns:
+            Optional[str]: Username if token is valid, None otherwise
+        """
+        token = self.get_token(token_str)
+        if token:
+            token.increment_usage()
+            logger.debug(f"Token used ({token.usage_count}/{token.max_usage}) for user {token.username}")
+            return token.username
+        return None
+
+    def delete_token(self, token_str: str) -> Optional[Token]:
+        """Delete a token.
+
+        Args:
+            token_str: Token string to delete
+
+        Returns:
+            Optional[Token]: Deleted token if found, None otherwise
+        """
+        return self.tokens.pop(token_str, None)
 
     # Activity & log tracking -------------------------------------------------
     def record_event(

@@ -21,7 +21,19 @@ def client():
 
 
 @pytest.fixture
-def sample_packages(client):
+def auth_token(client):
+    """Get authentication token for API requests."""
+    auth_data = {
+        "user": {"name": "ece30861defaultadminuser", "is_admin": True},
+        "secret": {"password": "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE packages;"}
+    }
+    response = client.put("/api/authenticate", json=auth_data)
+    assert response.status_code == 200
+    return response.get_json()
+
+
+@pytest.fixture
+def sample_packages(client, auth_token):
     """Create sample packages for testing."""
     packages = [
         {"name": "alpha", "version": "1.0.0", "content": "a" * 100},  # 100 bytes
@@ -32,7 +44,7 @@ def sample_packages(client):
     ]
 
     for pkg in packages:
-        client.post("/packages", json=pkg)
+        client.post("/packages", json=pkg, headers={"X-Authorization": auth_token})
 
     return packages
 

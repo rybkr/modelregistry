@@ -63,37 +63,22 @@ DEFAULT_USERNAME = "ece30861defaultadminuser"
 # Password from autograder - uses "packages" not "artifacts" as shown in OpenAPI spec example
 DEFAULT_PASSWORD = "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE packages;"
 
-# Simple token storage (in production, use proper session management)
-_valid_tokens = set()
-
-# Default token for the default admin user (used in reset/initial state)
-DEFAULT_TOKEN = "bearer default-admin-token"
-
-
-def initialize_default_token():
-    """Initialize the default admin token for the reset/initial state.
-
-    Per spec: In its initial and "Reset" state, the system must have a default user.
-    This function ensures the default token is available.
-    """
-    _valid_tokens.add(DEFAULT_TOKEN)
-
-
-# Initialize default token immediately when module loads (ensures it's always available)
-initialize_default_token()
-
 
 # Authentication helper
-def check_auth_header():
+def check_auth_header(required_permission: Optional[str] = None):
     """Check if X-Authorization header is present and token is valid.
 
     Per OpenAPI spec, X-Authorization header is required for certain endpoints.
-    Validates header presence and token validity against _valid_tokens set.
+    Validates header presence, token validity, and optionally checks permissions.
+
+    Args:
+        required_permission: Optional permission to check (upload, search, download)
 
     Returns:
-        tuple: (is_valid, error_response)
+        tuple: (is_valid, error_response, username)
             - is_valid (bool): True if header present and token valid, False otherwise
             - error_response (Optional[tuple]): (json_response, status_code) if invalid, None if valid
+            - username (Optional[str]): Username if valid, None otherwise
     """
     auth_header = request.headers.get("X-Authorization")
     logger.info(f"check_auth_header called, header present: {auth_header is not None}")
@@ -105,27 +90,46 @@ def check_auth_header():
                 "error": "Authentication failed due to invalid or missing AuthenticationToken"
             }),
             403,
-        )
+        ), None
 
     # Normalize token: strip whitespace and quotes (handles JSON-encoded strings)
     token_value = auth_header.strip().strip('"').strip("'")
 
-    # Check if it's the default token or a dynamically generated token
-    is_default = (token_value == DEFAULT_TOKEN)
-    is_in_valid_set = (token_value in _valid_tokens)
+    # Validate token and increment usage counter
+    username = storage.validate_and_use_token(token_value)
 
-    logger.info(f"Token validation: is_default={is_default}, is_in_valid_set={is_in_valid_set}, valid_tokens_count={len(_valid_tokens)}")
-
-    if not is_default and not is_in_valid_set:
-        logger.warning(f"Auth failed: token not recognized")
+    if not username:
+        logger.warning(f"Auth failed: token not recognized or expired")
         return False, (
             jsonify({
                 "error": "Authentication failed due to invalid or missing AuthenticationToken"
             }),
             403,
-        )
+        ), None
 
-    return True, None
+    # Check permission if required
+    if required_permission:
+        user = storage.get_user(username)
+        if not user:
+            logger.warning(f"Auth failed: user {username} not found")
+            return False, (
+                jsonify({
+                    "error": "Authentication failed due to invalid or missing AuthenticationToken"
+                }),
+                403,
+            ), None
+
+        if not user.has_permission(required_permission) and not user.is_admin:
+            logger.warning(f"Auth failed: user {username} lacks {required_permission} permission")
+            return False, (
+                jsonify({
+                    "error": f"User does not have {required_permission} permission"
+                }),
+                403,
+            ), None
+
+    logger.info(f"Auth successful for user: {username}")
+    return True, None, username
 
 
 # Artifact conversion helpers
@@ -302,8 +306,14 @@ def upload_package():
                 - message (str): Success confirmation
                 - package (dict): Created package details
             Error (400): Missing required fields or no data provided
+            Error (403): Authentication failed or missing upload permission
             Error (500): Server error during package creation
     """
+    # Check auth with upload permission
+    is_valid, error_response, _ = check_auth_header(required_permission="upload")
+    if not is_valid:
+        return error_response
+
     try:
         data = request.get_json()
         if not data:
@@ -512,10 +522,16 @@ def download_package(package_id):
     Returns:
         file: ZIP file download containing the requested package content
         tuple: JSON error response and HTTP status code on failure
+            Error (403): Authentication failed or missing download permission
             Error (404): Package not found
             Error (400): Invalid content type or missing URL
             Error (500): Server error during download preparation
     """
+    # Check auth with download permission
+    is_valid, error_response, _ = check_auth_header(required_permission="download")
+    if not is_valid:
+        return error_response
+
     try:
         package = storage.get_package(package_id)
         if not package:
@@ -705,8 +721,14 @@ def ingest_model():
                 - message (str): Success confirmation
                 - package (dict): Created package with embedded scores
             Error (400): Invalid URL, missing URL, or failed quality threshold
+            Error (403): Authentication failed or missing upload permission
             Error (500): Server error during ingestion or evaluation
     """
+    # Check auth with upload permission
+    is_valid, error_response, _ = check_auth_header(required_permission="upload")
+    if not is_valid:
+        return error_response
+
     try:
         data = request.get_json()
         if not data or "url" not in data:
@@ -831,8 +853,14 @@ def ingest_upload():
                 - imported_count (int): Number of packages successfully imported
                 - packages (list): List of created package details
             Error (400): No file, invalid format, validation errors
+            Error (403): Authentication failed or missing upload permission
             Error (500): Server error during processing
     """
+    # Check auth with upload permission
+    is_valid, error_response, _ = check_auth_header(required_permission="upload")
+    if not is_valid:
+        return error_response
+
     try:
         # Check if file is in request
         if "file" not in request.files:
@@ -995,29 +1023,27 @@ def reset_registry():
     logger.info(f"reset_registry called, packages before reset: {len(storage.packages)}")
 
     # Check authentication using the shared helper for consistency
-    is_valid, error_response = check_auth_header()
+    is_valid, error_response, _ = check_auth_header()
     if not is_valid:
         logger.warning("Reset failed: authentication check failed")
         return error_response
 
-    # TODO: Check permissions for 401 response (currently all authenticated users can reset)
-    # For now, if authenticated, allow reset
+    # Admin-only operation
+    requester_username = storage.validate_and_use_token(request.headers.get("X-Authorization", "").strip().strip('"').strip("'"))
+    if requester_username:
+        requester = storage.get_user(requester_username)
+        if not requester or not requester.is_admin:
+            logger.warning(f"User {requester_username} attempted reset without admin privileges")
+            return jsonify({"error": "Only administrators can reset the registry"}), 401
 
     try:
         logger.info("Performing storage reset...")
         storage.reset()
-        logger.info(f"Storage reset complete, packages after reset: {len(storage.packages)}")
-
-        # Note: We intentionally do NOT clear tokens during reset
-        # The autograder expects tokens issued before reset to remain valid
-        # Only reinitialize default token if not present
-        if DEFAULT_TOKEN not in _valid_tokens:
-            initialize_default_token()
-        logger.info(f"After reset, valid_tokens count: {len(_valid_tokens)}")
+        logger.info(f"Storage reset complete. Packages: {len(storage.packages)}, Users: {len(storage.users)}, Tokens: {len(storage.tokens)}")
 
         storage.record_event(
             "registry_reset",
-            actor="api",
+            actor=requester_username if requester_username else "system",
             details={"initiator": "api"},
         )
         logger.info("Reset complete, returning 200")
@@ -1119,45 +1145,137 @@ def authenticate():
             logger.warning("Auth failed: missing username or password")
             return jsonify({"error": "There is missing field(s) in the AuthenticationRequest or it is formed improperly."}), 400
 
-        logger.info(f"Auth attempt for username: {username}, password length: {len(password)}")
-        logger.info(f"Received password (repr): {repr(password)}")
-        logger.info(f"Expected password (repr): {repr(DEFAULT_PASSWORD)}")
+        logger.info(f"Auth attempt for username: {username}")
 
-        # Character-by-character comparison for debugging
-        if len(password) == len(DEFAULT_PASSWORD):
-            for i, (c1, c2) in enumerate(zip(password, DEFAULT_PASSWORD)):
-                if c1 != c2:
-                    logger.warning(f"First mismatch at position {i}: got {repr(c1)}, expected {repr(c2)}")
-                    break
-
-        # Validate credentials
-        # Autograder uses: correcthorsebatterystaple123(!__+@**(A'"`;DROP TABLE packages;
-        # OpenAPI spec shows: correcthorsebatterystaple123(!__+@**(A'"`;DROP TABLE artifacts;
-        # Accept both variants for compatibility
-        username_valid = (username == DEFAULT_USERNAME)
-        password_valid = (password == DEFAULT_PASSWORD)
-
-        logger.info(f"Auth validation: username_valid={username_valid}, password_valid={password_valid}")
-        if not password_valid:
-            # Log for debugging (don't log actual password in production)
-            logger.warning(f"Password mismatch. Expected length: {len(DEFAULT_PASSWORD)}, Got length: {len(password)}")
-
-        if not username_valid or not password_valid:
+        # Verify credentials using storage system
+        if not storage.verify_password(username, password):
             logger.warning(f"Auth failed: invalid credentials for user '{username}'")
             return jsonify({"error": "The user or password is invalid."}), 401
 
-        # Generate token per spec (any format allowed, using bearer token)
-        token = f"bearer {str(uuid.uuid4())}"
-        _valid_tokens.add(token)
+        # Create token with expiration and usage tracking
+        token_obj = storage.create_token(username)
 
-        logger.info(f"Auth successful, token generated, valid_tokens count: {len(_valid_tokens)}")
+        logger.info(f"Auth successful for {username}, token created, expires at {token_obj.expires_at}")
 
         # Return token as JSON string per spec (example shows quoted string)
         # jsonify() on a string returns the JSON-encoded string
-        return jsonify(token), 200
+        return jsonify(token_obj.token), 200
     except Exception as e:
         logger.error(f"Auth exception: {str(e)}")
         return jsonify({"error": "There is missing field(s) in the AuthenticationRequest or it is formed improperly."}), 400
+
+
+# User management endpoints
+@app.route("/user", methods=["POST"])
+@app.route("/api/user", methods=["POST"])
+def register_user():
+    """Register a new user (admin only).
+
+    Request Body: {
+        "username": str,
+        "password": str,
+        "is_admin": bool (optional),
+        "permissions": list[str] (optional, e.g., ["upload", "search", "download"])
+    }
+
+    Returns:
+        tuple: (User info JSON, 201) or error response
+            Success (201): User created
+            Error (400): Invalid request body
+            Error (403): Not authorized (not admin or invalid token)
+            Error (409): User already exists
+    """
+    logger.info("register_user endpoint called")
+
+    # Check auth - must be admin
+    is_valid, error_response, username = check_auth_header()
+    if not is_valid:
+        return error_response
+
+    # Verify user is admin
+    requester = storage.get_user(username)
+    if not requester or not requester.is_admin:
+        logger.warning(f"User {username} attempted to register user without admin privileges")
+        return jsonify({"error": "Only administrators can register users"}), 403
+
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Missing request body"}), 400
+
+        new_username = data.get("username")
+        password = data.get("password")
+        is_admin = data.get("is_admin", False)
+        permissions_list = data.get("permissions", [])
+
+        if not new_username or not password:
+            return jsonify({"error": "Username and password are required"}), 400
+
+        # Validate permissions
+        valid_permissions = {"upload", "search", "download"}
+        permissions = set(permissions_list)
+        if not permissions.issubset(valid_permissions):
+            return jsonify({"error": f"Invalid permissions. Valid: {valid_permissions}"}), 400
+
+        # Create user
+        try:
+            user = storage.create_user(new_username, password, is_admin, permissions)
+            logger.info(f"User {new_username} registered by {username}")
+            return jsonify(user.to_dict()), 201
+        except ValueError as e:
+            logger.warning(f"Failed to create user: {str(e)}")
+            return jsonify({"error": str(e)}), 409
+
+    except Exception as e:
+        logger.error(f"Error in register_user: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@app.route("/user/<username>", methods=["DELETE"])
+@app.route("/api/user/<username>", methods=["DELETE"])
+def delete_user(username):
+    """Delete a user account.
+
+    Users can delete their own accounts.
+    Administrators can delete any account.
+
+    Args:
+        username: Username to delete
+
+    Returns:
+        tuple: (Success message JSON, 200) or error response
+            Success (200): User deleted
+            Error (403): Not authorized
+            Error (404): User not found
+    """
+    logger.info(f"delete_user endpoint called for username: {username}")
+
+    # Check auth
+    is_valid, error_response, requester_username = check_auth_header()
+    if not is_valid:
+        return error_response
+
+    requester = storage.get_user(requester_username)
+    if not requester:
+        return jsonify({"error": "Requester not found"}), 403
+
+    # Check authorization: user can delete their own account, admins can delete any
+    if username != requester_username and not requester.is_admin:
+        logger.warning(f"User {requester_username} attempted to delete {username} without authorization")
+        return jsonify({"error": "Not authorized to delete this user"}), 403
+
+    # Prevent deletion of the default admin user
+    if username == DEFAULT_USERNAME:
+        logger.warning(f"Attempt to delete default admin user by {requester_username}")
+        return jsonify({"error": "Cannot delete default admin user"}), 403
+
+    # Delete user
+    deleted_user = storage.delete_user(username)
+    if not deleted_user:
+        return jsonify({"error": "User not found"}), 404
+
+    logger.info(f"User {username} deleted by {requester_username}")
+    return jsonify({"message": f"User {username} deleted successfully"}), 200
 
 
 # Artifact endpoints
@@ -1175,8 +1293,8 @@ def list_artifacts():
     """
     logger.info(f"list_artifacts called, current package count: {len(storage.packages)}")
 
-    # Check auth
-    is_valid, error_response = check_auth_header()
+    # Check auth with search permission
+    is_valid, error_response, _ = check_auth_header(required_permission="search")
     if not is_valid:
         logger.warning("list_artifacts: auth check failed")
         return error_response
@@ -1253,7 +1371,7 @@ def get_artifact(artifact_type, artifact_id):
         tuple: (Artifact JSON, 200) or error response
     """
     # Check auth
-    is_valid, error_response = check_auth_header()
+    is_valid, error_response, _ = check_auth_header()
     if not is_valid:
         return error_response
 
@@ -1284,7 +1402,7 @@ def update_artifact(artifact_type, artifact_id):
         tuple: (200) or error response
     """
     # Check auth
-    is_valid, error_response = check_auth_header()
+    is_valid, error_response, _ = check_auth_header()
     if not is_valid:
         return error_response
 
@@ -1341,8 +1459,8 @@ def create_artifact(artifact_type):
     Returns:
         tuple: (Artifact JSON, 201/202/424) or error response
     """
-    # Check auth
-    is_valid, error_response = check_auth_header()
+    # Check auth with upload permission
+    is_valid, error_response, _ = check_auth_header(required_permission="upload")
     if not is_valid:
         return error_response
 
@@ -1391,7 +1509,7 @@ def create_artifact(artifact_type):
         name=model_name,
         version="1.0.0",
         uploaded_by=DEFAULT_USERNAME,
-        upload_timestamp=datetime.utcnow(),
+        upload_timestamp=datetime.now(timezone.utc),
         size_bytes=0,
         metadata={"url": url, "scores": scores},
         s3_key=None,
@@ -1419,7 +1537,7 @@ def get_model_rating(artifact_id):
         tuple: (ModelRating JSON, 200) or error response
     """
     # Check auth
-    is_valid, error_response = check_auth_header()
+    is_valid, error_response, _ = check_auth_header()
     if not is_valid:
         return error_response
 
@@ -1540,7 +1658,7 @@ def get_artifact_cost(artifact_type, artifact_id):
         tuple: (ArtifactCost JSON, 200) or error response
     """
     # Check auth
-    is_valid, error_response = check_auth_header()
+    is_valid, error_response, _ = check_auth_header()
     if not is_valid:
         return error_response
 
@@ -1582,7 +1700,7 @@ def get_artifact_lineage(artifact_id):
         tuple: (ArtifactLineageGraph JSON, 200) or error response
     """
     # Check auth
-    is_valid, error_response = check_auth_header()
+    is_valid, error_response, _ = check_auth_header()
     if not is_valid:
         return error_response
 
@@ -1817,7 +1935,7 @@ def check_artifact_license(artifact_id):
         tuple: (boolean JSON, 200) or error response
     """
     # Check auth
-    is_valid, error_response = check_auth_header()
+    is_valid, error_response, _ = check_auth_header()
     if not is_valid:
         return error_response
 
@@ -1869,7 +1987,7 @@ def search_artifacts_by_regex():
         tuple: (Array of ArtifactMetadata, 200) or error response
     """
     # Check auth
-    is_valid, error_response = check_auth_header()
+    is_valid, error_response, _ = check_auth_header()
     if not is_valid:
         return error_response
 
@@ -1931,6 +2049,6 @@ def health_dashboard_redirect():
 
 
 if __name__ == "__main__":
-    # Initialize default token on startup (system starts in reset state)
-    initialize_default_token()
+    # Default admin user is auto-initialized by RegistryStorage.__init__()
+    # which calls self.reset() -> self._initialize_default_user()
     app.run(host="0.0.0.0", port=8000, debug=True)

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -32,7 +33,7 @@ def _run_api_server() -> Iterator[subprocess.Popen]:
     """Start the Flask API server in a background process."""
     env = os.environ.copy()
     process = subprocess.Popen(
-        ["python3", "src/api_server.py"],
+        [sys.executable, "src/api_server.py"],
         cwd=str(PROJECT_ROOT),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -133,12 +134,22 @@ def _create_package(name: str, version: str = "1.0.0") -> dict:
     Returns:
         Created package data
     """
+    # Get auth token
+    token = _authenticate()
+    if not token:
+        raise RuntimeError("Failed to authenticate for package creation")
+
     payload = {
         "name": name,
         "version": version,
         "metadata": {"description": f"Test package {name}"},
     }
-    response = requests.post(f"{BASE_URL}/api/packages", json=payload, timeout=5)
+    response = requests.post(
+        f"{BASE_URL}/api/packages",
+        json=payload,
+        headers={"X-Authorization": token},
+        timeout=5
+    )
     response.raise_for_status()
     return response.json()["package"]
 
