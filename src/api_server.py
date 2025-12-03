@@ -999,14 +999,191 @@ def get_model_rating(artifact_id):
     return jsonify(rating), 200
 
 
+def get_artifact_dependencies(artifact_type: str, artifact_id: str) -> list[Package]:
+    """Get all dependency packages for an artifact.
+    
+    For models, uses lineage information. For other types, returns empty list.
+    
+    Args:
+        artifact_type: Type of artifact
+        artifact_id: ID of artifact
+        
+    Returns:
+        List of dependency packages
+    """
+    if artifact_type != "model":
+        # Lineage/dependencies only available for models
+        return []
+    
+    package = storage.get_package(artifact_id)
+    if not package:
+        return []
+    
+    url = package.metadata.get("url", "")
+    if not url:
+        return []
+    
+    dependencies = []
+    
+    try:
+        model = Model(model=ModelResource(url=url))
+        
+        # Try to read config.json to extract lineage information
+        try:
+            with model.model.open_files(allow_patterns=["config.json"]) as repo:
+                if repo.exists("config.json"):
+                    config = repo.read_json("config.json")
+                    
+                    # Extract base model information
+                    base_model_path = None
+                    if "_name_or_path" in config:
+                        base_model_path = config["_name_or_path"]
+                    elif "base_model" in config:
+                        base_model_path = config["base_model"]
+                    
+                    # Search for base model in storage
+                    if base_model_path:
+                        base_model_id = base_model_path
+                        if "huggingface.co" in base_model_path.lower():
+                            parsed = urlparse(base_model_path)
+                            path_parts = [
+                                x for x in parsed.path.strip("/").split("/") if x
+                            ]
+                            if len(path_parts) >= 2:
+                                base_model_id = f"{path_parts[0]}/{path_parts[1]}"
+                            elif len(path_parts) == 1:
+                                base_model_id = path_parts[0]
+                        elif "/" in base_model_path:
+                            base_model_id = base_model_path
+                        else:
+                            base_model_id = base_model_path
+                        
+                        found_parent = None
+                        all_packages = storage.list_packages(offset=0, limit=10000)
+                        for pkg in all_packages:
+                            if pkg.id == artifact_id:
+                                continue  # Skip self
+                            
+                            pkg_url = pkg.metadata.get("url", "")
+                            pkg_name = pkg.name.lower()
+                            
+                            pkg_model_id = None
+                            if pkg_url and "huggingface.co" in pkg_url.lower():
+                                parsed = urlparse(pkg_url)
+                                path_parts = [
+                                    x for x in parsed.path.strip("/").split("/") if x
+                                ]
+                                if len(path_parts) >= 2:
+                                    pkg_model_id = f"{path_parts[0]}/{path_parts[1]}"
+                                elif len(path_parts) == 1:
+                                    pkg_model_id = path_parts[0]
+                            
+                            if (
+                                pkg_model_id
+                                and base_model_id.lower() == pkg_model_id.lower()
+                            ):
+                                found_parent = pkg
+                                break
+                            
+                            if (
+                                "/" not in base_model_id
+                                and pkg_name
+                                and base_model_id.lower() == pkg_name
+                            ):
+                                found_parent = pkg
+                                break
+                            
+                            base_model_name = (
+                                base_model_id.split("/")[-1].lower()
+                                if "/" in base_model_id
+                                else base_model_id.lower()
+                            )
+                            if (
+                                pkg_url
+                                and base_model_name in pkg_url.lower()
+                                and "huggingface.co" in pkg_url.lower()
+                            ):
+                                if base_model_name in pkg_url.lower().split("/")[-1]:
+                                    found_parent = pkg
+                                    break
+                        
+                        if found_parent:
+                            dependencies.append(found_parent)
+                    
+                    # Check for dataset information in config
+                    dataset_name = None
+                    if "dataset" in config:
+                        dataset_name = config["dataset"]
+                    elif "train_dataset" in config:
+                        dataset_name = config["train_dataset"]
+                    
+                    if dataset_name:
+                        dataset_id = dataset_name
+                        if "huggingface.co" in dataset_name.lower():
+                            parsed = urlparse(dataset_name)
+                            path_parts = [
+                                x for x in parsed.path.strip("/").split("/") if x
+                            ]
+                            if path_parts and path_parts[0] == "datasets":
+                                path_parts = path_parts[1:]
+                            if len(path_parts) >= 2:
+                                dataset_id = f"{path_parts[0]}/{path_parts[1]}"
+                            elif len(path_parts) == 1:
+                                dataset_id = path_parts[0]
+                        
+                        all_packages = storage.list_packages(offset=0, limit=10000)
+                        for pkg in all_packages:
+                            if pkg.id == artifact_id:
+                                continue  # Skip self
+                            
+                            pkg_url = pkg.metadata.get("url", "")
+                            pkg_name = pkg.name.lower()
+                            
+                            if "huggingface.co/datasets/" in pkg_url.lower():
+                                parsed = urlparse(pkg_url)
+                                path_parts = [
+                                    x for x in parsed.path.strip("/").split("/") if x
+                                ]
+                                if path_parts and path_parts[0] == "datasets":
+                                    path_parts = path_parts[1:]
+                                pkg_dataset_id = None
+                                if len(path_parts) >= 2:
+                                    pkg_dataset_id = f"{path_parts[0]}/{path_parts[1]}"
+                                elif len(path_parts) == 1:
+                                    pkg_dataset_id = path_parts[0]
+                                
+                                dataset_id_lower = dataset_id.lower()
+                                if (
+                                    pkg_dataset_id
+                                    and dataset_id_lower == pkg_dataset_id.lower()
+                                ):
+                                    dependencies.append(pkg)
+                                    break
+                                
+                                if (
+                                    "/" not in dataset_id
+                                    and dataset_id_lower == pkg_name
+                                ):
+                                    dependencies.append(pkg)
+                                    break
+        except Exception as e:
+            logger.warning(f"Could not read config.json for dependencies: {str(e)}")
+    except Exception as e:
+        logger.warning(f"Error getting dependencies: {str(e)}")
+    
+    return dependencies
+
+
 @app.route("/api/artifact/<artifact_type>/<artifact_id>/cost", methods=["GET"])
 def get_artifact_cost(artifact_type, artifact_id):
     """Get artifact cost in MB.
 
     Query param: dependency (boolean, default false)
-
+    
     Returns:
         tuple: (ArtifactCost JSON, 200) or error response
+        Format when dependency=false: {"artifact_id": {"total_cost": value}}
+        Format when dependency=true: {"artifact_id": {"standalone_cost": value, "total_cost": value}, ...}
     """
     is_valid, error_response = check_auth_header()
     if not is_valid:
@@ -1018,23 +1195,55 @@ def get_artifact_cost(artifact_type, artifact_id):
     if not validate_artifact_id(artifact_id):
         return jsonify({"error": "Invalid artifact ID format"}), 400
 
-    package = storage.get_artifact_by_type_and_id(artifact_type, artifact_id)
-    if not package:
-        return jsonify({"error": "Artifact not found"}), 404
+    try:
+        package = storage.get_artifact_by_type_and_id(artifact_type, artifact_id)
+        if not package:
+            return jsonify({"error": "Artifact not found"}), 404
 
-    # Calculate size in MB
-    size_bytes = package.size_bytes
-    size_mb = size_bytes / (1024 * 1024) if size_bytes > 0 else 0.0
-
-    # Get dependency query param
-    dependency = request.args.get("dependency", "false").lower() == "true"
-
-    cost = {
-        "size_mb": round(size_mb, 2),
-        "dependency": dependency,
-    }
-
-    return jsonify(cost), 200
+        dependency = request.args.get("dependency", "false").lower() == "true"
+        
+        # Calculate cost in MB (size_bytes / (1024 * 1024))
+        def calculate_cost_mb(size_bytes: int) -> float:
+            """Convert size in bytes to cost in MB."""
+            return round(size_bytes / (1024 * 1024), 2) if size_bytes > 0 else 0.0
+        
+        standalone_cost = calculate_cost_mb(package.size_bytes)
+        
+        if not dependency:
+            # Return only total_cost for the artifact itself
+            return jsonify({artifact_id: {"total_cost": standalone_cost}}), 200
+        
+        # When dependency=true, include all dependencies
+        dependencies = get_artifact_dependencies(artifact_type, artifact_id)
+        
+        # Build cost map for all artifacts (self + dependencies)
+        cost_map = {}
+        
+        # Add self
+        total_cost = standalone_cost
+        for dep in dependencies:
+            dep_cost = calculate_cost_mb(dep.size_bytes)
+            total_cost += dep_cost
+        
+        cost_map[artifact_id] = {
+            "standalone_cost": standalone_cost,
+            "total_cost": round(total_cost, 2)
+        }
+        
+        # Add dependencies
+        for dep in dependencies:
+            dep_standalone = calculate_cost_mb(dep.size_bytes)
+            # For dependencies, total_cost is just their standalone cost
+            # (they don't include their own dependencies in this calculation)
+            cost_map[dep.id] = {
+                "standalone_cost": dep_standalone,
+                "total_cost": dep_standalone
+            }
+        
+        return jsonify(cost_map), 200
+    except Exception as e:
+        logger.error(f"Error calculating artifact cost: {str(e)}")
+        return jsonify({"error": "The artifact cost calculator encountered an error."}), 500
 
 
 @app.route("/api/artifact/model/<artifact_id>/lineage", methods=["GET"])
