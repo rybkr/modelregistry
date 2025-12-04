@@ -824,6 +824,7 @@ def create_artifact(artifact_type):
     logger.info(f"artifact data: {data}")
 
     url = data["url"]
+    model_name = data["name"]
 
     # Check if artifact already exists (by URL)
     for package in storage.packages.values():
@@ -842,10 +843,6 @@ def create_artifact(artifact_type):
     net_score = NetScore()
     net_score.evaluate(list(results.values()))
     results[net_score.name] = net_score
-
-    # Extract name from URL
-    parts = url.rstrip("/").split("/")
-    model_name = parts[-1] if parts else "unknown"
 
     # Store scores
     scores = {}
