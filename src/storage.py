@@ -6,6 +6,10 @@ from threading import Lock
 from typing import Dict, List, Optional, Tuple
 import regex as re
 import logging
+import requests
+import os
+import base64
+from urllib.parse import urlparse
 
 from registry_models import Package
 
@@ -195,6 +199,27 @@ class RegistryStorage:
                     continue  # Skip readme search if name matched
 
                 # Search readme if present
+                # Check if GH url. You can get README from GH repos with '/repos/{user}/{repo}/readme'
+                url = package.metadata.get('url')
+                if "github.com" in urlparse(url).netloc:
+                    token = os.environ["GH_API_TOKEN"]
+                    headers = {
+                        "Authorization": f"Bearer {token}",
+                        "Accept": "application/vnd.github+json",
+                    }
+
+                    owner = str(urlparse(url).path).split("/")[0]
+                    repo = str(urlparse(url).path).split("/")[1]
+                    readme_url = f"https://api.github.com/repos/{owner}/{repo}/readme"
+                    response = requests.get(readme_url, headers=headers)
+                    response.raise_for_status()
+                    readme = base64.b64decode(response.json().get("content"))
+                    match = regex_search_with_timeout(
+                        pattern, str(readme), timeout_seconds=0.5
+                    )
+                    if match:
+                        results.append(package)
+
                 if "readme" in package.metadata:
                     readme_text = str(package.metadata.get("readme", ""))
                     # Limit readme length for search
