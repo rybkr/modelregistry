@@ -924,6 +924,29 @@ def get_model_rating(artifact_id):
         metric_data = scores.get(metric_name, {})
         score = metric_data.get("score", 0.0)
         latency_ms = metric_data.get("latency_ms", 0.0)
+        
+        # Ensure score is a valid float (handle None, preserve negative values like -1.0 for reviewedness)
+        if score is None:
+            score = 0.0
+        else:
+            try:
+                score = float(score)
+                # Preserve negative values (e.g., -1.0 for reviewedness on error)
+                # Don't clamp to 0.0 as some metrics use -1.0 to indicate computation failure
+            except (TypeError, ValueError):
+                score = 0.0
+        
+        # Ensure latency is a valid float
+        if latency_ms is None:
+            latency_ms = 0.0
+        else:
+            try:
+                latency_ms = float(latency_ms)
+                if latency_ms < 0.0:
+                    latency_ms = 0.0
+            except (TypeError, ValueError):
+                latency_ms = 0.0
+        
         latency_seconds = latency_ms / 1000.0
         return score, latency_seconds
 
@@ -941,6 +964,7 @@ def get_model_rating(artifact_id):
     dataset_quality_val, dataset_quality_latency = get_metric_value("dataset_quality")
     code_quality_val, code_quality_latency = get_metric_value("code_quality")
     size_score_val, size_score_latency = get_metric_value("size_score")
+    reviewedness_val, reviewedness_latency = get_metric_value("reviewedness")
 
     # Handle size_score - must be a dict with device scores
     size_score_obj = size_score_val if isinstance(size_score_val, dict) else {}
@@ -955,11 +979,9 @@ def get_model_rating(artifact_id):
             "aws_server": 1.0,
         }
 
-    # Missing metrics default to 0.0
+    # Missing metrics default to 0.0 (not implemented yet)
     reproducibility_val = 0.0
     reproducibility_latency = 0.0
-    reviewedness_val = 0.0
-    reviewedness_latency = 0.0
     tree_score_val = 0.0
     tree_score_latency = 0.0
 
