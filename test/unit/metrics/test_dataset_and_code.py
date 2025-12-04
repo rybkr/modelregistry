@@ -124,11 +124,12 @@ class TestDatasetAndCode:
             code=CodeResource("https://github.com/org/empty"),
         )
 
-        monkeypatch.setattr("metrics.dataset_and_code.try_readme", lambda resource: None)
+        monkeypatch.setattr(
+            "metrics.dataset_and_code.try_readme", lambda resource: None
+        )
 
         metric.compute(fake_model)
 
         assert metric.value == 0.0
         assert metric.details["model"]["justification"] == "README not found"
         assert metric.details["code"]["justification"] == "README not found"
-

@@ -48,16 +48,16 @@ def _query_genai(prompt: str, model: str = "llama3.1:latest") -> Dict[str, Any]:
     resp = requests.post(url, headers=headers, json=body, timeout=30)
     resp.raise_for_status()
     resp_data = resp.json()
-    
+
     # Check if choices array exists and has at least one element
     if "choices" not in resp_data or len(resp_data["choices"]) == 0:
         raise ValueError("API response missing choices or choices array is empty")
-    
+
     # Check if message exists in the first choice
     first_choice = resp_data["choices"][0]
     if "message" not in first_choice or "content" not in first_choice["message"]:
         raise ValueError("API response missing message or content in choices[0]")
-    
+
     content = first_choice["message"]["content"].strip()
 
     try:
@@ -139,34 +139,74 @@ class Performance(Metric):
                     # Check for performance keywords first (for consistency and determinism)
                     text_lower = text.lower()
                     perf_keywords = [
-                        "accuracy", "performance", "benchmark", "evaluation", "results", 
-                        "score", "f1", "bleu", "rouge", "glue", "sota", "state-of-the-art",
-                        "outperforms", "achieves", "comparable", "better than", "beats",
-                        "math", "code", "reasoning", "tasks", "metrics", "test", "testing",
-                        "model", "trained", "training", "dataset", "data", "experiment",
-                        "experimental", "validation", "validated", "improved", "improvement",
-                        "achieve", "top", "best", "leading", "leaderboard"
+                        "accuracy",
+                        "performance",
+                        "benchmark",
+                        "evaluation",
+                        "results",
+                        "score",
+                        "f1",
+                        "bleu",
+                        "rouge",
+                        "glue",
+                        "sota",
+                        "state-of-the-art",
+                        "outperforms",
+                        "achieves",
+                        "comparable",
+                        "better than",
+                        "beats",
+                        "math",
+                        "code",
+                        "reasoning",
+                        "tasks",
+                        "metrics",
+                        "test",
+                        "testing",
+                        "model",
+                        "trained",
+                        "training",
+                        "dataset",
+                        "data",
+                        "experiment",
+                        "experimental",
+                        "validation",
+                        "validated",
+                        "improved",
+                        "improvement",
+                        "achieve",
+                        "top",
+                        "best",
+                        "leading",
+                        "leaderboard",
                     ]
-                    has_perf_keywords = any(keyword in text_lower for keyword in perf_keywords)
-                    
+                    has_perf_keywords = any(
+                        keyword in text_lower for keyword in perf_keywords
+                    )
+
                     # If keywords found, use minimum score for consistency
                     # Give higher score for performance keywords to ensure > 0.5
                     # Increased from 0.6 to 0.65 to make it easier to pass 0.5 threshold
                     min_score = 0.65 if has_perf_keywords else 0.0
-                    
+
                     try:
                         result = _query_genai(self._build_prompt(text))
                         api_score = result.get("score", 0.0)
-                        
+
                         # Use the maximum of API score and minimum score from keywords
                         # This ensures consistency: if keywords found, always get at least 0.5
                         final_score = max(api_score, min_score)
-                        
+
                         if final_score > api_score:
                             result["score"] = final_score
-                            result["justification"] = result.get("justification", "") + f" (Adjusted: performance keywords found, minimum {min_score})"
-                            logger.info(f"Performance score for {key} adjusted from {api_score} to {final_score} based on keywords")
-                        
+                            result["justification"] = (
+                                result.get("justification", "")
+                                + f" (Adjusted: performance keywords found, minimum {min_score})"
+                            )
+                            logger.info(
+                                f"Performance score for {key} adjusted from {api_score} to {final_score} based on keywords"
+                            )
+
                         scores.append(final_score)
                         details[key] = result
                     except Exception as api_error:
@@ -175,14 +215,16 @@ class Performance(Metric):
                             scores.append(min_score)
                             details[key] = {
                                 "score": min_score,
-                                "justification": f"Performance mentioned in README but API evaluation failed: {str(api_error)}"
+                                "justification": f"Performance mentioned in README but API evaluation failed: {str(api_error)}",
                             }
-                            logger.warning(f"Performance API failed for {key} but performance mentioned, using keyword-based score {min_score}")
+                            logger.warning(
+                                f"Performance API failed for {key} but performance mentioned, using keyword-based score {min_score}"
+                            )
                         else:
                             scores.append(0.0)
                             details[key] = {
                                 "score": 0.0,
-                                "justification": f"API evaluation failed and no performance claims found: {str(api_error)}"
+                                "justification": f"API evaluation failed and no performance claims found: {str(api_error)}",
                             }
                 else:
                     scores.append(0.0)
