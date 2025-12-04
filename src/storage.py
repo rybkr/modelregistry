@@ -484,7 +484,7 @@ class RegistryStorage:
 
         return package
 
-    # Activity & log tracking -------------------------------------------------
+    # Activity & log tracking --------------------------------------------------
     def record_event(
         self,
         event_type: str,
