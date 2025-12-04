@@ -75,7 +75,7 @@ def test_ingest_model_success(mock_model_resource, mock_model, mock_compute, cli
 
     # Make request
     response = client.post(
-        "/ingest", json={"url": "https://huggingface.co/test-org/test-model"}
+        "/api/ingest", json={"url": "https://huggingface.co/test-org/test-model"}
     )
 
     # Verify response
@@ -104,7 +104,7 @@ def test_ingest_model_fails_license_threshold(
 
     # Make request
     response = client.post(
-        "/ingest", json={"url": "https://huggingface.co/test-org/test-model"}
+        "/api/ingest", json={"url": "https://huggingface.co/test-org/test-model"}
     )
 
     # Verify response
@@ -134,7 +134,7 @@ def test_ingest_model_fails_size_threshold(
 
     # Make request
     response = client.post(
-        "/ingest", json={"url": "https://huggingface.co/test-org/test-model"}
+        "/api/ingest", json={"url": "https://huggingface.co/test-org/test-model"}
     )
 
     # Verify response
@@ -162,7 +162,7 @@ def test_ingest_model_fails_multiple_thresholds(
 
     # Make request
     response = client.post(
-        "/ingest", json={"url": "https://huggingface.co/test-org/test-model"}
+        "/api/ingest", json={"url": "https://huggingface.co/test-org/test-model"}
     )
 
     # Verify response - should fail on the first one encountered
@@ -198,7 +198,7 @@ def test_ingest_model_exact_threshold(
 
     # Make request
     response = client.post(
-        "/ingest", json={"url": "https://huggingface.co/test-org/test-model"}
+        "/api/ingest", json={"url": "https://huggingface.co/test-org/test-model"}
     )
 
     # Verify response - should succeed with scores exactly at 0.5
@@ -209,7 +209,7 @@ def test_ingest_model_exact_threshold(
 
 def test_ingest_model_invalid_url(client):
     """Test model ingestion with non-HuggingFace URL."""
-    response = client.post("/ingest", json={"url": "https://github.com/test/repo"})
+    response = client.post("/api/ingest", json={"url": "https://github.com/test/repo"})
 
     assert response.status_code == 400
     data = response.get_json()
@@ -218,7 +218,7 @@ def test_ingest_model_invalid_url(client):
 
 def test_ingest_model_missing_url(client):
     """Test model ingestion without URL."""
-    response = client.post("/ingest", json={})
+    response = client.post("/api/ingest", json={})
 
     assert response.status_code == 400
     data = response.get_json()
@@ -237,7 +237,7 @@ def test_ingest_model_computation_error(
 
     # Make request
     response = client.post(
-        "/ingest", json={"url": "https://huggingface.co/test-org/test-model"}
+        "/api/ingest", json={"url": "https://huggingface.co/test-org/test-model"}
     )
 
     # Verify response
@@ -259,7 +259,7 @@ def test_ingest_model_stores_scores_in_metadata(
 
     # Make request
     response = client.post(
-        "/ingest", json={"url": "https://huggingface.co/test-org/test-model"}
+        "/api/ingest", json={"url": "https://huggingface.co/test-org/test-model"}
     )
 
     # Verify scores are stored in metadata
@@ -306,7 +306,7 @@ def test_ingest_model_extracts_name_correctly(
     for url, expected_name in test_cases:
         storage.reset()  # Reset between tests
 
-        response = client.post("/ingest", json={"url": url})
+        response = client.post("/api/ingest", json={"url": url})
 
         assert response.status_code == 201
         data = response.get_json()
