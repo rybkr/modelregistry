@@ -21,6 +21,7 @@ from metrics.net_score import NetScore
 from models import Model
 from resources.model_resource import ModelResource
 from resources.code_resource import CodeResource
+from resources.dataset_resource import DatasetResource
 
 # Configure logging for debugging authentication and reset issues
 logging.basicConfig(
@@ -464,23 +465,33 @@ def get_package(package_id):
             return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/packages/<package_id>", methods=["DELETE"])
-def delete_package(package_id):
+@app.route("/api/artifacts/<artifact_type>/<artifact_id>", methods=["DELETE"])
+def delete_package(artifact_type, artifact_id):
     """Delete a package from the registry.
 
     Removes a package and all associated data using its unique identifier.
 
     Args:
-        package_id (str): Unique package identifier (UUID)
+        artifact_type (str): Type of artifact to delete
+        artifact_id (str): ID of artifact to delete
 
     Returns:
         tuple: JSON response and HTTP status code
             Success (200): Deletion confirmation message
+            Error (400): Invalid artifact type
             Error (404): Package not found
             Error (500): Server error during deletion
     """
+    is_valid, error_response = check_auth_header()
+    if not is_valid:
+        logger.warning("Reset failed: authentication check failed")
+        return error_response
+
+    if not validate_artifact_type(artifact_type):
+        logger.warning("Delete failed: Invalid artifact type")
+        return jsonify({"Invalid artifact type"}), 400
     try:
-        deleted_package = storage.delete_package(package_id)
+        deleted_package = storage.delete_package(artifact_id)
         if deleted_package is None:
             return jsonify({"error": "Package not found"}), 404
 
@@ -1400,7 +1411,11 @@ def create_artifact(artifact_type):
         # Must be dataset
         dataset = DatasetResource(url)
         metadata = dataset.fetch_metadata()
-        package_name = metadata.get("id").split("/")[1]
+
+        if dataset._dataset_type == "kaggle":
+            package_name = metadata.get('info').get('datasetSlug')
+        else:
+            package_name = metadata.get("id").split("/")[1]
         metadata = {"url": url}
         logger.info(f"Uploading dataset with name {package_name}")
 
@@ -1408,13 +1423,13 @@ def create_artifact(artifact_type):
     package_id = str(uuid.uuid4())
     package = Package(
         id=package_id,
-        name=model_name,
+        name=package_name,
         type=artifact_type,
         version="1.0.0",
         uploaded_by=DEFAULT_USERNAME,
         upload_timestamp=datetime.utcnow(),
         size_bytes=0,
-        metadata={"url": url, "scores": scores},
+        metadata=metadata,
         s3_key=None,
     )
 

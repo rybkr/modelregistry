@@ -326,19 +326,19 @@ class RegistryStorage:
                 # Return all packages
                 all_packages = list(self.packages.values())
                 # Filter by type if specified
-                if artifact_types:
-                    filtered = []
-                    for pkg in all_packages:
-                        # Infer type from URL
-                        url = pkg.metadata.get("url", "")
-                        pkg_type = "model"
-                        if "huggingface.co/datasets/" in url:
-                            pkg_type = "dataset"
-                        elif "huggingface.co/spaces/" in url or "github.com" in url or "gitlab.com" in url:
-                            pkg_type = "code"
-                        if pkg_type in artifact_types:
-                            filtered.append(pkg)
-                    all_packages = filtered
+                #if artifact_types:
+                #    filtered = []
+                #    for pkg in all_packages:
+                #        # Infer type from URL
+                #        url = pkg.metadata.get("url", "")
+                #        pkg_type = "model"
+                #        if "huggingface.co/datasets/" in url:
+                #            pkg_type = "dataset"
+                #        elif "huggingface.co/spaces/" in url or "github.com" in url or "gitlab.com" in url:
+                #            pkg_type = "code"
+                #        if pkg_type in artifact_types:
+                #            filtered.append(pkg)
+                #    all_packages = filtered
                 matching_packages = all_packages
             else:
                 # Process individual queries

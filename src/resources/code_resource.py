@@ -1,4 +1,5 @@
 from typing import Any, ContextManager, Iterable, Optional
+import os
 
 from adapters.client import GitHubClient, GitLabClient, HFClient
 from adapters.code_fetchers import open_codebase
@@ -34,7 +35,7 @@ class CodeResource(_BaseResource):
             if self._is_hf_space_url():
                 self.metadata = self._client.get_space_metadata(self._repo_id)
             elif "github.com" in self.url:
-                self.metadata = GitHubClient().get_metadata(self.url)
+                self.metadata = GitHubClient().get_metadata(self.url, token=os.environ["GH_API_TOKEN"])
             elif "gitlab.com" in self.url:
                 self.metadata = GitLabClient().get_metadata(self.url)
 

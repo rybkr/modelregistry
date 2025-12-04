@@ -1,10 +1,13 @@
 import time
+import json
+import tempfile
 from typing import Any, Optional
 from urllib.parse import quote_plus, urlparse
+from kaggle.api.kaggle_api_extended import KaggleApi
 
 import requests
 
-from errors import SCHEMA_ERROR, AppError, http_error_from_hf_response
+from errors import SCHEMA_ERROR, NOT_FOUND, AppError, http_error_from_hf_response
 
 
 class _Client:
@@ -186,6 +189,13 @@ class GitHubClient(_Client):
         parts = [x for x in path.path.strip("/").split("/") if x]
         return parts[0], parts[1]
 
+    def get_dataset_metadata(
+        self, url: str, retries: int = 0, token: Optional[str] = None
+    ) -> dict[str, Any]:
+        """ The same as get_metadata, I added this so that all clients have a
+        get_dataset_metadata function."""
+        return self.get_metadata(url, retries, token)
+
     def get_metadata(
         self, url: str, retries: int = 0, token: Optional[str] = None
     ) -> dict[str, Any]:
@@ -266,11 +276,11 @@ class GitHubClient(_Client):
         headers = {"Accept": "application/vnd.github+json"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
-        
+
         all_prs = []
         page = 1
         per_page = 100
-        
+
         while True:
             try:
                 path = f"/{owner}/{repo}/pulls?state={state}&page={page}&per_page={per_page}"
@@ -279,20 +289,20 @@ class GitHubClient(_Client):
                 response = requests.get(url, headers=headers)
                 response.raise_for_status()
                 prs = response.json()
-                
+
                 if not isinstance(prs, list) or len(prs) == 0:
                     break
-                    
+
                 all_prs.extend(prs)
-                
+
                 # If we got fewer than per_page results, we're done
                 if len(prs) < per_page:
                     break
-                    
+
                 page += 1
             except Exception:
                 break
-                
+
         return all_prs
 
     def get_pull_request(self, owner: str, repo: str, pr_number: int, retries: int = 0, token: Optional[str] = None) -> dict[str, Any] | None:
@@ -312,7 +322,7 @@ class GitHubClient(_Client):
         headers = {"Accept": "application/vnd.github+json"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
-        
+
         try:
             data = self._get_json(path, retries, headers=headers)
             if not isinstance(data, dict):
@@ -340,7 +350,7 @@ class GitHubClient(_Client):
         headers = {"Accept": "application/vnd.github+json"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
-        
+
         try:
             data = self._get_json(path, retries, headers=headers)
             if not isinstance(data, list):
@@ -428,3 +438,48 @@ class GitLabClient(_Client):
         if not isinstance(data, list):
             return None
         return len(data)
+
+
+class KaggleClient(_Client):
+    """A client for interacting with the Kaggle API.
+
+    Attributes:
+        base_url (str): The base URL for the Kaggle API.
+    """
+
+    def __init__(self, base_url: str = "https://kaggle.com"):
+        """Initialize the Kaggle Client with a base URL.
+
+        Args:
+            base_url (str): The base URL for the Kaggle API.
+                Defaults to "https://kaggle.com".
+        """
+        super().__init__(base_url=base_url)
+        self.api = KaggleApi()
+        self.api.authenticate()
+
+    def get_dataset_metadata(self, repo_id: str, retries: int = 0) -> dict[str, Any]:
+        """Retrieve metadata for a specific dataset from the Kaggle API.
+
+        Args:
+            repo_id (str): The repository ID of the dataset.
+
+        Returns:
+            dict[str, Any]: The metadata of the dataset.
+
+        Raises:
+            AppError: If the response data is not a dictionary or if the request fails.
+        """
+
+        toReturn = dict()
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            datasetFile = ""
+            try:
+                datasetFile = self.api.dataset_metadata(repo_id, tmpdirname)
+            except ValueError:
+                raise AppError(code=NOT_FOUND, message="Dataset not found", context={"url": f"{self.base_url}{repo_id}"})
+            else:
+                with open(datasetFile) as f_in:
+                    toReturn = json.load(f_in)
+
+        return toReturn
