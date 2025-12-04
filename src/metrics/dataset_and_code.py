@@ -48,16 +48,16 @@ def _query_genai(prompt: str, model: str = "llama3.1:latest") -> Dict[str, Any]:
     resp = requests.post(url, headers=headers, json=body, timeout=30)
     resp.raise_for_status()
     resp_data = resp.json()
-    
+
     # Check if choices array exists and has at least one element
     if "choices" not in resp_data or len(resp_data["choices"]) == 0:
         raise ValueError("API response missing choices or choices array is empty")
-    
+
     # Check if message exists in the first choice
     first_choice = resp_data["choices"][0]
     if "message" not in first_choice or "content" not in first_choice["message"]:
         raise ValueError("API response missing message or content in choices[0]")
-    
+
     content = first_choice["message"]["content"].strip()
 
     try:
@@ -118,20 +118,55 @@ class DatasetAndCode(Metric):
                 # Check for keywords first (for consistency and determinism)
                 text_lower = model_text.lower()
                 dataset_keywords = [
-                    "dataset", "data", "training data", "corpus", "training set",
-                    "datasets", "training", "train", "evaluation", "eval", "test set",
-                    "validation", "val", "split", "splits"
+                    "dataset",
+                    "data",
+                    "training data",
+                    "corpus",
+                    "training set",
+                    "datasets",
+                    "training",
+                    "train",
+                    "evaluation",
+                    "eval",
+                    "test set",
+                    "validation",
+                    "val",
+                    "split",
+                    "splits",
                 ]
                 code_keywords = [
-                    "code", "github", "example", "script", "notebook", "colab", "demo", 
-                    "repository", "repo", "open-source", "open source", "source code",
-                    "open-sourced", "open sourced", "available", "download", "checkpoint",
-                    "implementation", "implement", "usage", "use", "how to", "tutorial",
-                    "guide", "documentation", "docs", "api", "interface"
+                    "code",
+                    "github",
+                    "example",
+                    "script",
+                    "notebook",
+                    "colab",
+                    "demo",
+                    "repository",
+                    "repo",
+                    "open-source",
+                    "open source",
+                    "source code",
+                    "open-sourced",
+                    "open sourced",
+                    "available",
+                    "download",
+                    "checkpoint",
+                    "implementation",
+                    "implement",
+                    "usage",
+                    "use",
+                    "how to",
+                    "tutorial",
+                    "guide",
+                    "documentation",
+                    "docs",
+                    "api",
+                    "interface",
                 ]
                 has_dataset = any(keyword in text_lower for keyword in dataset_keywords)
                 has_code = any(keyword in text_lower for keyword in code_keywords)
-                
+
                 # Determine minimum score based on keywords
                 # Increased to ensure scores > 0.5 after sqrt boost
                 if has_dataset and has_code:
@@ -140,20 +175,25 @@ class DatasetAndCode(Metric):
                     min_score = 0.65  # One present = good (increased from 0.6)
                 else:
                     min_score = 0.0
-                
+
                 try:
                     r_model = _query_genai(self._build_prompt(model_text))
                     api_score = r_model.get("score", 0.0)
-                    
+
                     # Use the maximum of API score and minimum score from keywords
                     # This ensures consistency: if keywords found, always get at least the minimum
                     final_score = max(api_score, min_score)
-                    
+
                     if final_score > api_score:
                         r_model["score"] = final_score
-                        r_model["justification"] = r_model.get("justification", "") + f" (Adjusted: dataset/code keywords found, minimum {min_score})"
-                        logger.info(f"DatasetAndCode score for model adjusted from {api_score} to {final_score} based on keywords")
-                    
+                        r_model["justification"] = (
+                            r_model.get("justification", "")
+                            + f" (Adjusted: dataset/code keywords found, minimum {min_score})"
+                        )
+                        logger.info(
+                            f"DatasetAndCode score for model adjusted from {api_score} to {final_score} based on keywords"
+                        )
+
                     scores.append(final_score)
                     details["model"] = r_model
                 except Exception as api_error:
@@ -162,13 +202,15 @@ class DatasetAndCode(Metric):
                     if min_score > 0.0:
                         details["model"] = {
                             "score": min_score,
-                            "justification": f"API failed but found dataset/code mentions in README: {str(api_error)}"
+                            "justification": f"API failed but found dataset/code mentions in README: {str(api_error)}",
                         }
-                        logger.warning(f"DatasetAndCode API failed for model but found keywords, using keyword-based score {min_score}")
+                        logger.warning(
+                            f"DatasetAndCode API failed for model but found keywords, using keyword-based score {min_score}"
+                        )
                     else:
                         details["model"] = {
                             "score": 0.0,
-                            "justification": f"API failed and no dataset/code mentions found: {str(api_error)}"
+                            "justification": f"API failed and no dataset/code mentions found: {str(api_error)}",
                         }
             else:
                 scores.append(0.0)
@@ -186,20 +228,55 @@ class DatasetAndCode(Metric):
                 # Check for keywords first (for consistency and determinism)
                 text_lower = code_text.lower()
                 dataset_keywords = [
-                    "dataset", "data", "training data", "corpus", "training set",
-                    "datasets", "training", "train", "evaluation", "eval", "test set",
-                    "validation", "val", "split", "splits"
+                    "dataset",
+                    "data",
+                    "training data",
+                    "corpus",
+                    "training set",
+                    "datasets",
+                    "training",
+                    "train",
+                    "evaluation",
+                    "eval",
+                    "test set",
+                    "validation",
+                    "val",
+                    "split",
+                    "splits",
                 ]
                 code_keywords = [
-                    "code", "github", "example", "script", "notebook", "colab", "demo", 
-                    "repository", "repo", "open-source", "open source", "source code",
-                    "open-sourced", "open sourced", "available", "download", "checkpoint",
-                    "implementation", "implement", "usage", "use", "how to", "tutorial",
-                    "guide", "documentation", "docs", "api", "interface"
+                    "code",
+                    "github",
+                    "example",
+                    "script",
+                    "notebook",
+                    "colab",
+                    "demo",
+                    "repository",
+                    "repo",
+                    "open-source",
+                    "open source",
+                    "source code",
+                    "open-sourced",
+                    "open sourced",
+                    "available",
+                    "download",
+                    "checkpoint",
+                    "implementation",
+                    "implement",
+                    "usage",
+                    "use",
+                    "how to",
+                    "tutorial",
+                    "guide",
+                    "documentation",
+                    "docs",
+                    "api",
+                    "interface",
                 ]
                 has_dataset = any(keyword in text_lower for keyword in dataset_keywords)
                 has_code = any(keyword in text_lower for keyword in code_keywords)
-                
+
                 # Determine minimum score based on keywords
                 # Increased to ensure scores > 0.5 after sqrt boost
                 if has_dataset and has_code:
@@ -208,19 +285,24 @@ class DatasetAndCode(Metric):
                     min_score = 0.65  # One present = good (increased from 0.6)
                 else:
                     min_score = 0.0
-                
+
                 try:
                     r_code = _query_genai(self._build_prompt(code_text))
                     api_score = r_code.get("score", 0.0)
-                    
+
                     # Use the maximum of API score and minimum score from keywords
                     final_score = max(api_score, min_score)
-                    
+
                     if final_score > api_score:
                         r_code["score"] = final_score
-                        r_code["justification"] = r_code.get("justification", "") + f" (Adjusted: dataset/code keywords found, minimum {min_score})"
-                        logger.info(f"DatasetAndCode score for code adjusted from {api_score} to {final_score} based on keywords")
-                    
+                        r_code["justification"] = (
+                            r_code.get("justification", "")
+                            + f" (Adjusted: dataset/code keywords found, minimum {min_score})"
+                        )
+                        logger.info(
+                            f"DatasetAndCode score for code adjusted from {api_score} to {final_score} based on keywords"
+                        )
+
                     scores.append(final_score)
                     details["code"] = r_code
                 except Exception as api_error:
@@ -229,13 +311,15 @@ class DatasetAndCode(Metric):
                     if min_score > 0.0:
                         details["code"] = {
                             "score": min_score,
-                            "justification": f"API failed but found dataset/code mentions: {str(api_error)}"
+                            "justification": f"API failed but found dataset/code mentions: {str(api_error)}",
                         }
-                        logger.warning(f"DatasetAndCode API failed for code but found keywords, using keyword-based score {min_score}")
+                        logger.warning(
+                            f"DatasetAndCode API failed for code but found keywords, using keyword-based score {min_score}"
+                        )
                     else:
                         details["code"] = {
                             "score": 0.0,
-                            "justification": f"API failed and no dataset/code mentions found: {str(api_error)}"
+                            "justification": f"API failed and no dataset/code mentions found: {str(api_error)}",
                         }
             else:
                 scores.append(0.0)

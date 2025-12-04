@@ -259,7 +259,12 @@ class GitHubClient(_Client):
         return len(data)
 
     def get_pull_requests(
-        self, owner: str, repo: str, state: str = "all", retries: int = 0, token: Optional[str] = None
+        self,
+        owner: str,
+        repo: str,
+        state: str = "all",
+        retries: int = 0,
+        token: Optional[str] = None,
     ) -> list[dict[str, Any]]:
         """Get all pull requests for a GitHub repository.
 
@@ -305,7 +310,14 @@ class GitHubClient(_Client):
 
         return all_prs
 
-    def get_pull_request(self, owner: str, repo: str, pr_number: int, retries: int = 0, token: Optional[str] = None) -> dict[str, Any] | None:
+    def get_pull_request(
+        self,
+        owner: str,
+        repo: str,
+        pr_number: int,
+        retries: int = 0,
+        token: Optional[str] = None,
+    ) -> dict[str, Any] | None:
         """Get details for a specific pull request, including additions and deletions.
 
         Args:
@@ -332,7 +344,12 @@ class GitHubClient(_Client):
             return None
 
     def get_pull_request_reviews(
-        self, owner: str, repo: str, pr_number: int, retries: int = 0, token: Optional[str] = None
+        self,
+        owner: str,
+        repo: str,
+        pr_number: int,
+        retries: int = 0,
+        token: Optional[str] = None,
     ) -> list[dict[str, Any]]:
         """Get reviews for a specific pull request.
 
