@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 def test_health_activity_reports_recent_events(client) -> None:
     payload = {
         "name": "vision-model",
@@ -42,4 +43,3 @@ def test_health_logs_include_recent_operations(client) -> None:
     messages = [entry["message"] for entry in entries]
     assert any("Uploaded package" in message for message in messages)
     assert any("Deleted package" in message for message in messages)
-

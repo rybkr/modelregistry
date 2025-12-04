@@ -1,4 +1,5 @@
 """Tests to demonstrate the list_packages() bug with filter/sort/pagination order."""
+
 import pytest
 import sys
 import os
@@ -25,7 +26,7 @@ def sample_packages(client):
     """Create sample packages for testing."""
     packages = [
         {"name": "alpha", "version": "1.0.0", "content": "a" * 100},  # 100 bytes
-        {"name": "beta", "version": "2.0.0", "content": "b" * 200},   # 200 bytes
+        {"name": "beta", "version": "2.0.0", "content": "b" * 200},  # 200 bytes
         {"name": "gamma", "version": "1.5.0", "content": "g" * 150},  # 150 bytes
         {"name": "delta", "version": "2.5.0", "content": "d" * 250},  # 250 bytes
         {"name": "epsilon", "version": "1.2.0", "content": "e" * 120},  # 120 bytes

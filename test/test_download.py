@@ -1,4 +1,5 @@
 """Tests for package download functionality."""
+
 import pytest
 import sys
 import os
@@ -26,9 +27,10 @@ def client():
 @pytest.fixture
 def mock_model_resource():
     """Create a mock ModelResource and Model for testing."""
-    with patch("api_server.Model") as mock_model_class, \
-         patch("api_server.ModelResource") as mock_resource_class:
-
+    with (
+        patch("api_server.Model") as mock_model_class,
+        patch("api_server.ModelResource") as mock_resource_class,
+    ):
         # Create mock repo view
         mock_repo = MagicMock()
 
@@ -81,11 +83,14 @@ def test_download_package_not_found(client):
 def test_download_package_no_url(client):
     """Test download returns 400 when package has no URL."""
     # Create package without URL
-    response = client.post("/packages", json={
-        "name": "test-package",
-        "version": "1.0.0",
-        "metadata": {}  # No URL
-    })
+    response = client.post(
+        "/packages",
+        json={
+            "name": "test-package",
+            "version": "1.0.0",
+            "metadata": {},  # No URL
+        },
+    )
 
     assert response.status_code == 201
     package_id = response.get_json()["package"]["id"]
@@ -101,11 +106,14 @@ def test_download_package_no_url(client):
 def test_download_invalid_content_type(client, mock_model_resource):
     """Test download returns 400 for invalid content type."""
     # Create package with URL
-    response = client.post("/packages", json={
-        "name": "test-package",
-        "version": "1.0.0",
-        "metadata": {"url": "https://huggingface.co/test/model"}
-    })
+    response = client.post(
+        "/packages",
+        json={
+            "name": "test-package",
+            "version": "1.0.0",
+            "metadata": {"url": "https://huggingface.co/test/model"},
+        },
+    )
 
     assert response.status_code == 201
     package_id = response.get_json()["package"]["id"]
@@ -158,11 +166,14 @@ def test_download_full_package(mock_resource_class, mock_model_class, client):
         mock_resource_class.return_value = mock_resource
 
         # Create package
-        response = client.post("/packages", json={
-            "name": "test-model",
-            "version": "1.0.0",
-            "metadata": {"url": "https://huggingface.co/test/model"}
-        })
+        response = client.post(
+            "/packages",
+            json={
+                "name": "test-model",
+                "version": "1.0.0",
+                "metadata": {"url": "https://huggingface.co/test/model"},
+            },
+        )
 
         assert response.status_code == 201
         package_id = response.get_json()["package"]["id"]
@@ -176,7 +187,7 @@ def test_download_full_package(mock_resource_class, mock_model_class, client):
 
         # Verify ZIP content
         zip_data = io.BytesIO(response.data)
-        with zipfile.ZipFile(zip_data, 'r') as zipf:
+        with zipfile.ZipFile(zip_data, "r") as zipf:
             files = zipf.namelist()
             assert len(files) == 3
             assert "README.md" in files
@@ -221,11 +232,14 @@ def test_download_weights_only(mock_resource_class, mock_model_class, client):
         mock_resource_class.return_value = mock_resource
 
         # Create package
-        response = client.post("/packages", json={
-            "name": "test-model",
-            "version": "1.0.0",
-            "metadata": {"url": "https://huggingface.co/test/model"}
-        })
+        response = client.post(
+            "/packages",
+            json={
+                "name": "test-model",
+                "version": "1.0.0",
+                "metadata": {"url": "https://huggingface.co/test/model"},
+            },
+        )
 
         assert response.status_code == 201
         package_id = response.get_json()["package"]["id"]
@@ -281,11 +295,14 @@ def test_download_datasets_only(mock_resource_class, mock_model_class, client):
         mock_resource_class.return_value = mock_resource
 
         # Create package
-        response = client.post("/packages", json={
-            "name": "test-model",
-            "version": "1.0.0",
-            "metadata": {"url": "https://huggingface.co/test/model"}
-        })
+        response = client.post(
+            "/packages",
+            json={
+                "name": "test-model",
+                "version": "1.0.0",
+                "metadata": {"url": "https://huggingface.co/test/model"},
+            },
+        )
 
         assert response.status_code == 201
         package_id = response.get_json()["package"]["id"]
@@ -330,11 +347,14 @@ def test_download_records_event(mock_resource_class, mock_model_class, client):
         mock_resource_class.return_value = mock_resource
 
         # Create package
-        response = client.post("/packages", json={
-            "name": "test-model",
-            "version": "1.0.0",
-            "metadata": {"url": "https://huggingface.co/test/model"}
-        })
+        response = client.post(
+            "/packages",
+            json={
+                "name": "test-model",
+                "version": "1.0.0",
+                "metadata": {"url": "https://huggingface.co/test/model"},
+            },
+        )
 
         package_id = response.get_json()["package"]["id"]
 
@@ -350,11 +370,14 @@ def test_download_records_event(mock_resource_class, mock_model_class, client):
 def test_download_content_types_are_case_sensitive(client, mock_model_resource):
     """Test that content type parameter is case-sensitive."""
     # Create package
-    response = client.post("/packages", json={
-        "name": "test-package",
-        "version": "1.0.0",
-        "metadata": {"url": "https://huggingface.co/test/model"}
-    })
+    response = client.post(
+        "/packages",
+        json={
+            "name": "test-package",
+            "version": "1.0.0",
+            "metadata": {"url": "https://huggingface.co/test/model"},
+        },
+    )
 
     package_id = response.get_json()["package"]["id"]
 

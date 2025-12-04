@@ -56,7 +56,9 @@ def _wait_for_server_ready(timeout: float = 30.0) -> None:
 
     while time.time() < deadline:
         try:
-            response = requests.get(f"{BASE_URL}/api/health", headers=headers, timeout=1)
+            response = requests.get(
+                f"{BASE_URL}/api/health", headers=headers, timeout=1
+            )
             if response.status_code == 200:
                 return
         except requests.RequestException as exc:
@@ -450,4 +452,3 @@ def test_reset_preserves_health_endpoint(api_server: str) -> None:
     health_data = health_response.json()
     assert health_data["status"] == "healthy"
     assert health_data["packages_count"] == 0
-

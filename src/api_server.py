@@ -39,7 +39,9 @@ CORS(app)
 def not_found(error):
     """Return JSON 404 errors for API requests."""
     accept_header = request.headers.get("Accept", "")
-    if request.path.startswith('/api/') or (request.path.startswith('/packages/') and '/rate' in request.path):
+    if request.path.startswith("/api/") or (
+        request.path.startswith("/packages/") and "/rate" in request.path
+    ):
         return jsonify({"error": "Not found"}), 404
     if "application/json" in accept_header:
         return jsonify({"error": "Not found"}), 404
@@ -50,11 +52,14 @@ def not_found(error):
 def internal_error(error):
     """Return JSON 500 errors for API requests."""
     accept_header = request.headers.get("Accept", "")
-    if request.path.startswith('/api/') or (request.path.startswith('/packages/') and '/rate' in request.path):
+    if request.path.startswith("/api/") or (
+        request.path.startswith("/packages/") and "/rate" in request.path
+    ):
         return jsonify({"error": "Internal server error"}), 500
     if "application/json" in accept_header:
         return jsonify({"error": "Internal server error"}), 500
     return error
+
 
 DEFAULT_USERNAME = "ece30861defaultadminuser"
 DEFAULT_PASSWORD = "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE packages;"
@@ -166,17 +171,17 @@ def package_to_artifact(package: Package, artifact_type: Optional[str] = None) -
     """
     url = package.metadata.get("url", "")
     artifact_data = {"url": url}
-    
+
     try:
         download_url = f"/packages/{package.id}/download"
         artifact_data["download_url"] = download_url
     except Exception:
         if "download_url" in package.metadata:
             artifact_data["download_url"] = package.metadata["download_url"]
-    
+
     return {
         "metadata": package_to_artifact_metadata(package, artifact_type),
-        "data": artifact_data
+        "data": artifact_data,
     }
 
 
@@ -264,6 +269,7 @@ def parse_json_content(content: str) -> list:
 
 
 # ================================ ROUTES ====================================
+
 
 @app.route("/", methods=["GET"])
 def index():
@@ -545,7 +551,7 @@ def get_package(package_id):
 
     if wants_html:
         return render_template("package_detail.html", package=package)
-    
+
     return jsonify(package.to_dict()), 200
 
 
@@ -924,7 +930,7 @@ def get_model_rating(artifact_id):
         metric_data = scores.get(metric_name, {})
         score = metric_data.get("score", 0.0)
         latency_ms = metric_data.get("latency_ms", 0.0)
-        
+
         # Ensure score is a valid float (handle None, preserve negative values like -1.0 for reviewedness)
         if score is None:
             score = 0.0
@@ -935,7 +941,7 @@ def get_model_rating(artifact_id):
                 # Don't clamp to 0.0 as some metrics use -1.0 to indicate computation failure
             except (TypeError, ValueError):
                 score = 0.0
-        
+
         # Ensure latency is a valid float
         if latency_ms is None:
             latency_ms = 0.0
@@ -946,7 +952,7 @@ def get_model_rating(artifact_id):
                     latency_ms = 0.0
             except (TypeError, ValueError):
                 latency_ms = 0.0
-        
+
         latency_seconds = latency_ms / 1000.0
         return score, latency_seconds
 
@@ -1020,46 +1026,46 @@ def get_model_rating(artifact_id):
 
 def get_artifact_dependencies(artifact_type: str, artifact_id: str) -> list[Package]:
     """Get all dependency packages for an artifact.
-    
+
     For models, uses lineage information. For other types, returns empty list.
-    
+
     Args:
         artifact_type: Type of artifact
         artifact_id: ID of artifact
-        
+
     Returns:
         List of dependency packages
     """
     if artifact_type != "model":
         # Lineage/dependencies only available for models
         return []
-    
+
     package = storage.get_package(artifact_id)
     if not package:
         return []
-    
+
     url = package.metadata.get("url", "")
     if not url:
         return []
-    
+
     dependencies = []
-    
+
     try:
         model = Model(model=ModelResource(url=url))
-        
+
         # Try to read config.json to extract lineage information
         try:
             with model.model.open_files(allow_patterns=["config.json"]) as repo:
                 if repo.exists("config.json"):
                     config = repo.read_json("config.json")
-                    
+
                     # Extract base model information
                     base_model_path = None
                     if "_name_or_path" in config:
                         base_model_path = config["_name_or_path"]
                     elif "base_model" in config:
                         base_model_path = config["base_model"]
-                    
+
                     # Search for base model in storage
                     if base_model_path:
                         base_model_id = base_model_path
@@ -1076,16 +1082,16 @@ def get_artifact_dependencies(artifact_type: str, artifact_id: str) -> list[Pack
                             base_model_id = base_model_path
                         else:
                             base_model_id = base_model_path
-                        
+
                         found_parent = None
                         all_packages = storage.list_packages(offset=0, limit=10000)
                         for pkg in all_packages:
                             if pkg.id == artifact_id:
                                 continue  # Skip self
-                            
+
                             pkg_url = pkg.metadata.get("url", "")
                             pkg_name = pkg.name.lower()
-                            
+
                             pkg_model_id = None
                             if pkg_url and "huggingface.co" in pkg_url.lower():
                                 parsed = urlparse(pkg_url)
@@ -1096,14 +1102,14 @@ def get_artifact_dependencies(artifact_type: str, artifact_id: str) -> list[Pack
                                     pkg_model_id = f"{path_parts[0]}/{path_parts[1]}"
                                 elif len(path_parts) == 1:
                                     pkg_model_id = path_parts[0]
-                            
+
                             if (
                                 pkg_model_id
                                 and base_model_id.lower() == pkg_model_id.lower()
                             ):
                                 found_parent = pkg
                                 break
-                            
+
                             if (
                                 "/" not in base_model_id
                                 and pkg_name
@@ -1111,7 +1117,7 @@ def get_artifact_dependencies(artifact_type: str, artifact_id: str) -> list[Pack
                             ):
                                 found_parent = pkg
                                 break
-                            
+
                             base_model_name = (
                                 base_model_id.split("/")[-1].lower()
                                 if "/" in base_model_id
@@ -1125,17 +1131,17 @@ def get_artifact_dependencies(artifact_type: str, artifact_id: str) -> list[Pack
                                 if base_model_name in pkg_url.lower().split("/")[-1]:
                                     found_parent = pkg
                                     break
-                        
+
                         if found_parent:
                             dependencies.append(found_parent)
-                    
+
                     # Check for dataset information in config
                     dataset_name = None
                     if "dataset" in config:
                         dataset_name = config["dataset"]
                     elif "train_dataset" in config:
                         dataset_name = config["train_dataset"]
-                    
+
                     if dataset_name:
                         dataset_id = dataset_name
                         if "huggingface.co" in dataset_name.lower():
@@ -1149,15 +1155,15 @@ def get_artifact_dependencies(artifact_type: str, artifact_id: str) -> list[Pack
                                 dataset_id = f"{path_parts[0]}/{path_parts[1]}"
                             elif len(path_parts) == 1:
                                 dataset_id = path_parts[0]
-                        
+
                         all_packages = storage.list_packages(offset=0, limit=10000)
                         for pkg in all_packages:
                             if pkg.id == artifact_id:
                                 continue  # Skip self
-                            
+
                             pkg_url = pkg.metadata.get("url", "")
                             pkg_name = pkg.name.lower()
-                            
+
                             if "huggingface.co/datasets/" in pkg_url.lower():
                                 parsed = urlparse(pkg_url)
                                 path_parts = [
@@ -1170,7 +1176,7 @@ def get_artifact_dependencies(artifact_type: str, artifact_id: str) -> list[Pack
                                     pkg_dataset_id = f"{path_parts[0]}/{path_parts[1]}"
                                 elif len(path_parts) == 1:
                                     pkg_dataset_id = path_parts[0]
-                                
+
                                 dataset_id_lower = dataset_id.lower()
                                 if (
                                     pkg_dataset_id
@@ -1178,7 +1184,7 @@ def get_artifact_dependencies(artifact_type: str, artifact_id: str) -> list[Pack
                                 ):
                                     dependencies.append(pkg)
                                     break
-                                
+
                                 if (
                                     "/" not in dataset_id
                                     and dataset_id_lower == pkg_name
@@ -1189,7 +1195,7 @@ def get_artifact_dependencies(artifact_type: str, artifact_id: str) -> list[Pack
             logger.warning(f"Could not read config.json for dependencies: {str(e)}")
     except Exception as e:
         logger.warning(f"Error getting dependencies: {str(e)}")
-    
+
     return dependencies
 
 
@@ -1198,7 +1204,7 @@ def get_artifact_cost(artifact_type, artifact_id):
     """Get artifact cost in MB.
 
     Query param: dependency (boolean, default false)
-    
+
     Returns:
         tuple: (ArtifactCost JSON, 200) or error response
         Format when dependency=false: {"artifact_id": {"total_cost": value}}
@@ -1220,35 +1226,35 @@ def get_artifact_cost(artifact_type, artifact_id):
             return jsonify({"error": "Artifact not found"}), 404
 
         dependency = request.args.get("dependency", "false").lower() == "true"
-        
+
         # Calculate cost in MB (size_bytes / (1024 * 1024))
         def calculate_cost_mb(size_bytes: int) -> float:
             """Convert size in bytes to cost in MB."""
             return round(size_bytes / (1024 * 1024), 2) if size_bytes > 0 else 0.0
-        
+
         standalone_cost = calculate_cost_mb(package.size_bytes)
-        
+
         if not dependency:
             # Return only total_cost for the artifact itself
             return jsonify({artifact_id: {"total_cost": standalone_cost}}), 200
-        
+
         # When dependency=true, include all dependencies
         dependencies = get_artifact_dependencies(artifact_type, artifact_id)
-        
+
         # Build cost map for all artifacts (self + dependencies)
         cost_map = {}
-        
+
         # Add self
         total_cost = standalone_cost
         for dep in dependencies:
             dep_cost = calculate_cost_mb(dep.size_bytes)
             total_cost += dep_cost
-        
+
         cost_map[artifact_id] = {
             "standalone_cost": standalone_cost,
-            "total_cost": round(total_cost, 2)
+            "total_cost": round(total_cost, 2),
         }
-        
+
         # Add dependencies
         for dep in dependencies:
             dep_standalone = calculate_cost_mb(dep.size_bytes)
@@ -1256,13 +1262,15 @@ def get_artifact_cost(artifact_type, artifact_id):
             # (they don't include their own dependencies in this calculation)
             cost_map[dep.id] = {
                 "standalone_cost": dep_standalone,
-                "total_cost": dep_standalone
+                "total_cost": dep_standalone,
             }
-        
+
         return jsonify(cost_map), 200
     except Exception as e:
         logger.error(f"Error calculating artifact cost: {str(e)}")
-        return jsonify({"error": "The artifact cost calculator encountered an error."}), 500
+        return jsonify(
+            {"error": "The artifact cost calculator encountered an error."}
+        ), 500
 
 
 @app.route("/api/artifact/model/<artifact_id>/lineage", methods=["GET"])

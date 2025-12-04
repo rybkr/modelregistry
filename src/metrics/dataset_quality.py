@@ -92,27 +92,41 @@ class DatasetQuality(Metric):
                 readme: Optional[str] = None
                 if model.model:
                     readme = try_readme(model.model)
-                
+
                 if readme:
                     readme_lower = readme.lower()
                     dataset_keywords = [
-                        "dataset", "data", "training data", "corpus", "training set",
-                        "training dataset", "evaluation dataset", "test set", "validation set",
-                        "data collection", "data source", "benchmark", "benchmarks"
+                        "dataset",
+                        "data",
+                        "training data",
+                        "corpus",
+                        "training set",
+                        "training dataset",
+                        "evaluation dataset",
+                        "test set",
+                        "validation set",
+                        "data collection",
+                        "data source",
+                        "benchmark",
+                        "benchmarks",
                     ]
-                    has_dataset_mention = any(keyword in readme_lower for keyword in dataset_keywords)
-                    
+                    has_dataset_mention = any(
+                        keyword in readme_lower for keyword in dataset_keywords
+                    )
+
                     if has_dataset_mention:
                         # Give partial credit for mentioning dataset in README
                         self.value = 0.6
                         self.latency_ms = int(round((time.time() - start) * 1000))
                         self.details = {
                             "partial_credit": True,
-                            "reason": "Dataset mentioned in README but no dataset URL provided"
+                            "reason": "Dataset mentioned in README but no dataset URL provided",
                         }
-                        logger.info("Dataset mentioned in README, giving partial credit 0.6")
+                        logger.info(
+                            "Dataset mentioned in README, giving partial credit 0.6"
+                        )
                         return
-                
+
                 self.value = 0.0
                 self.details = {"error": "No dataset provided"}
                 self.latency_ms = int(round((time.time() - start) * 1000))

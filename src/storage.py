@@ -9,10 +9,12 @@ import logging
 
 from registry_models import Package
 
-logger = logging.getLogger('storage')
+logger = logging.getLogger("storage")
 
 
-def regex_search_with_timeout(pattern: re.Pattern, text: str, timeout_seconds: float = 0.5) -> Optional[re.Match]:
+def regex_search_with_timeout(
+    pattern: re.Pattern, text: str, timeout_seconds: float = 0.5
+) -> Optional[re.Match]:
     """Execute regex search with native timeout protection.
 
     Uses the regex module's native timeout support which can interrupt
@@ -36,7 +38,9 @@ def regex_search_with_timeout(pattern: re.Pattern, text: str, timeout_seconds: f
         return None
 
 
-def regex_compile_with_timeout(pattern_str: str, flags: int = 0, timeout_seconds: float = 0.5) -> Optional[re.Pattern]:
+def regex_compile_with_timeout(
+    pattern_str: str, flags: int = 0, timeout_seconds: float = 0.5
+) -> Optional[re.Pattern]:
     """Compile regex pattern. Timeout will be applied during search operations.
 
     Note: The regex module's compile() doesn't support timeout parameter.
@@ -56,7 +60,9 @@ def regex_compile_with_timeout(pattern_str: str, flags: int = 0, timeout_seconds
         # Timeout will be applied during search operations
         return re.compile(pattern_str, flags)
     except Exception as e:
-        logger.warning(f"Regex pattern compilation failed: {pattern_str}, error: {str(e)}")
+        logger.warning(
+            f"Regex pattern compilation failed: {pattern_str}, error: {str(e)}"
+        )
         return None
 
 
@@ -163,19 +169,27 @@ class RegistryStorage:
             logger.info(f"Regex search initiated with pattern: {query}")
 
             # Compile pattern with timeout protection
-            pattern = regex_compile_with_timeout(query, re.IGNORECASE, timeout_seconds=0.5)
+            pattern = regex_compile_with_timeout(
+                query, re.IGNORECASE, timeout_seconds=0.5
+            )
             if pattern is None:
                 # Compilation timed out or failed
-                logger.warning(f"Regex search rejected: pattern compilation timed out or failed: {query}")
+                logger.warning(
+                    f"Regex search rejected: pattern compilation timed out or failed: {query}"
+                )
                 return []
 
             # Search with timeout protection
             for package in self.packages.values():
                 # Limit name length for search
-                package_name = package.name[:1000] if len(package.name) > 1000 else package.name
+                package_name = (
+                    package.name[:1000] if len(package.name) > 1000 else package.name
+                )
 
                 # Search name with timeout
-                match = regex_search_with_timeout(pattern, package_name, timeout_seconds=0.5)
+                match = regex_search_with_timeout(
+                    pattern, package_name, timeout_seconds=0.5
+                )
                 if match:
                     results.append(package)
                     continue  # Skip readme search if name matched
@@ -188,7 +202,9 @@ class RegistryStorage:
                         readme_text = readme_text[:10000]
 
                     # Search readme with timeout
-                    match = regex_search_with_timeout(pattern, readme_text, timeout_seconds=0.5)
+                    match = regex_search_with_timeout(
+                        pattern, readme_text, timeout_seconds=0.5
+                    )
                     if match:
                         results.append(package)
 
@@ -206,7 +222,11 @@ class RegistryStorage:
         return results
 
     def get_artifacts_by_query(
-        self, queries: List[dict], artifact_types: Optional[List[str]] = None, offset: int = 0, limit: int = 100
+        self,
+        queries: List[dict],
+        artifact_types: Optional[List[str]] = None,
+        offset: int = 0,
+        limit: int = 100,
     ) -> Tuple[List[Package], int]:
         """Get packages matching artifact query criteria.
 
@@ -244,7 +264,11 @@ class RegistryStorage:
                         pkg_type = "model"
                         if "huggingface.co/datasets/" in url:
                             pkg_type = "dataset"
-                        elif "huggingface.co/spaces/" in url or "github.com" in url or "gitlab.com" in url:
+                        elif (
+                            "huggingface.co/spaces/" in url
+                            or "github.com" in url
+                            or "gitlab.com" in url
+                        ):
                             pkg_type = "code"
                         if pkg_type in artifact_types:
                             filtered.append(pkg)
@@ -275,7 +299,11 @@ class RegistryStorage:
                                     pkg_type = "model"
                                     if "huggingface.co/datasets/" in url:
                                         pkg_type = "dataset"
-                                    elif "huggingface.co/spaces/" in url or "github.com" in url or "gitlab.com" in url:
+                                    elif (
+                                        "huggingface.co/spaces/" in url
+                                        or "github.com" in url
+                                        or "gitlab.com" in url
+                                    ):
                                         pkg_type = "code"
                                     if pkg_type not in query_types:
                                         continue
@@ -296,7 +324,11 @@ class RegistryStorage:
                             pkg_type = "model"
                             if "huggingface.co/datasets/" in url:
                                 pkg_type = "dataset"
-                            elif "huggingface.co/spaces/" in url or "github.com" in url or "gitlab.com" in url:
+                            elif (
+                                "huggingface.co/spaces/" in url
+                                or "github.com" in url
+                                or "gitlab.com" in url
+                            ):
                                 pkg_type = "code"
                             if pkg_type in query_types and pkg not in matching_packages:
                                 matching_packages.append(pkg)
@@ -309,7 +341,11 @@ class RegistryStorage:
                     pkg_type = "model"
                     if "huggingface.co/datasets/" in url:
                         pkg_type = "dataset"
-                    elif "huggingface.co/spaces/" in url or "github.com" in url or "gitlab.com" in url:
+                    elif (
+                        "huggingface.co/spaces/" in url
+                        or "github.com" in url
+                        or "gitlab.com" in url
+                    ):
                         pkg_type = "code"
                     if pkg_type in artifact_types:
                         filtered.append(pkg)
@@ -324,7 +360,9 @@ class RegistryStorage:
 
             return paginated, total_count
 
-    def get_artifact_by_type_and_id(self, artifact_type: str, artifact_id: str) -> Optional[Package]:
+    def get_artifact_by_type_and_id(
+        self, artifact_type: str, artifact_id: str
+    ) -> Optional[Package]:
         """Retrieve package by ID, optionally validating type.
 
         Args:
@@ -344,7 +382,11 @@ class RegistryStorage:
             pkg_type = "model"
             if "huggingface.co/datasets/" in url:
                 pkg_type = "dataset"
-            elif "huggingface.co/spaces/" in url or "github.com" in url or "gitlab.com" in url:
+            elif (
+                "huggingface.co/spaces/" in url
+                or "github.com" in url
+                or "gitlab.com" in url
+            ):
                 pkg_type = "code"
             if pkg_type != artifact_type:
                 return None
@@ -384,7 +426,9 @@ class RegistryStorage:
         }
 
         if message is None:
-            event["message"] = self._default_event_message(event_type, package_info, event_details)
+            event["message"] = self._default_event_message(
+                event_type, package_info, event_details
+            )
         else:
             event["message"] = message
 
@@ -413,15 +457,17 @@ class RegistryStorage:
 
         with self._lock:
             relevant_events = [
-                event for event in self._activity_log if event["timestamp"] >= window_start
+                event
+                for event in self._activity_log
+                if event["timestamp"] >= window_start
             ]
 
         counts = Counter(event["type"] for event in relevant_events)
-        counts_map = {
-            key: counts.get(key, 0) for key in self._known_event_types
-        }
+        counts_map = {key: counts.get(key, 0) for key in self._known_event_types}
         counts_map["other"] = sum(
-            count for event_type, count in counts.items() if event_type not in self._known_event_types
+            count
+            for event_type, count in counts.items()
+            if event_type not in self._known_event_types
         )
 
         events_for_client = [
@@ -434,7 +480,9 @@ class RegistryStorage:
                 "message": event["message"],
                 "details": event["details"],
             }
-            for event in sorted(relevant_events, key=lambda e: e["timestamp"], reverse=True)[:event_limit]
+            for event in sorted(
+                relevant_events, key=lambda e: e["timestamp"], reverse=True
+            )[:event_limit]
         ]
 
         return {
@@ -445,7 +493,9 @@ class RegistryStorage:
             "events": events_for_client,
         }
 
-    def get_recent_logs(self, *, limit: int = 100, level: Optional[str] = None) -> List[dict]:
+    def get_recent_logs(
+        self, *, limit: int = 100, level: Optional[str] = None
+    ) -> List[dict]:
         """Return recent log-style entries for inspection."""
 
         with self._lock:
@@ -453,7 +503,9 @@ class RegistryStorage:
 
         if level:
             level_upper = level.upper()
-            entries = [entry for entry in entries if entry["level"].upper() == level_upper]
+            entries = [
+                entry for entry in entries if entry["level"].upper() == level_upper
+            ]
 
         selected = entries[-limit:]
 
@@ -476,11 +528,17 @@ class RegistryStorage:
         """Generate a human-friendly default message for an event."""
 
         if event_type == "package_uploaded":
-            return self._format_package_message("Uploaded package", package_info, details)
+            return self._format_package_message(
+                "Uploaded package", package_info, details
+            )
         if event_type == "model_ingested":
-            return self._format_package_message("Ingested model package", package_info, details)
+            return self._format_package_message(
+                "Ingested model package", package_info, details
+            )
         if event_type == "package_deleted":
-            return self._format_package_message("Deleted package", package_info, details)
+            return self._format_package_message(
+                "Deleted package", package_info, details
+            )
         if event_type == "metrics_evaluated":
             metric_list = ", ".join(details.get("metrics", []))
             return self._format_package_message(
@@ -494,7 +552,9 @@ class RegistryStorage:
         return self._format_package_message(label, package_info, details)
 
     @staticmethod
-    def _format_package_message(prefix: str, package_info: Optional[dict], details: dict) -> str:
+    def _format_package_message(
+        prefix: str, package_info: Optional[dict], details: dict
+    ) -> str:
         if not package_info:
             return prefix
         name = package_info.get("name", "unknown")

@@ -14,7 +14,7 @@ class _BaseResource(BaseModel):
     def _hf_id_from_url(self) -> str:
         path = urlparse(self.url)
         parts = [x for x in path.path.strip("/").split("/") if x]
-        
+
         # Handle model URLs: https://huggingface.co/org/model
         if len(parts) >= 2 and parts[0] not in {"datasets", "spaces"}:
             return f"{parts[0]}/{parts[1]}"
@@ -28,7 +28,7 @@ class _BaseResource(BaseModel):
         # Handle datasets/spaces with 2 parts
         elif len(parts) == 2 and parts[0] in {"datasets", "spaces"}:
             return parts[1]
-        
+
         raise AppError(
             UNSUPPORTED_URL,
             "The specified url is not supported yet.",

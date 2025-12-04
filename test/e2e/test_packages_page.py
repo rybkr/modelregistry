@@ -52,7 +52,9 @@ def _wait_for_server_ready(timeout: float = 30.0) -> None:
 
     while time.time() < deadline:
         try:
-            response = requests.get(f"{BASE_URL}/api/health", headers=headers, timeout=1)
+            response = requests.get(
+                f"{BASE_URL}/api/health", headers=headers, timeout=1
+            )
             if response.status_code == 200:
                 return
         except requests.RequestException as exc:
@@ -139,7 +141,9 @@ def _wait_for_no_results(driver: webdriver.Chrome) -> None:
 
 
 @pytest.mark.e2e
-def test_model_packages_page_lists_and_filters_packages(browser: webdriver.Chrome) -> None:
+def test_model_packages_page_lists_and_filters_packages(
+    browser: webdriver.Chrome,
+) -> None:
     """Verify that the Model Packages page renders, searches, and resets results."""
     # Reset registry state and create sample packages
     requests.delete(f"{BASE_URL}/reset", timeout=5)
