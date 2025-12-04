@@ -74,7 +74,9 @@ def test_filter_sort_paginate_together(sample_packages, client):
     """Test combining filter, sort, and pagination."""
     # Version filtering only supports exact matches, not ~ syntax
     # Test with exact version match instead
-    response = client.get("/api/packages?version=1.0.0&sort-field=alpha&limit=2&offset=0")
+    response = client.get(
+        "/api/packages?version=1.0.0&sort-field=alpha&limit=2&offset=0"
+    )
 
     assert response.status_code == 200
     data = response.get_json()
@@ -83,7 +85,7 @@ def test_filter_sort_paginate_together(sample_packages, client):
     # Only alpha matches exact version 1.0.0
     assert len(packages) == 1
     assert packages[0]["name"] == "alpha"
-    #assert packages[1]["name"] == "gamma"
+    # assert packages[1]["name"] == "gamma"
 
 
 def test_descending_sort_with_filter_iterator_bug(sample_packages, client):
@@ -101,7 +103,7 @@ def test_descending_sort_with_filter_iterator_bug(sample_packages, client):
     # Only beta matches exact version 2.0.0
     assert len(packages) == 1
     assert packages[0]["name"] == "beta"
-    #assert packages[1]["name"] == "beta"
+    # assert packages[1]["name"] == "beta"
 
 
 def test_total_reflects_filtered_count_not_registry_count(sample_packages, client):
@@ -134,7 +136,7 @@ def test_total_with_pagination_shows_filtered_count(sample_packages, client):
     assert data["total"] == 1
 
     # But total should be 3 (total matching the filter, not limited by pagination)
-    #assert data["total"] == 3
+    # assert data["total"] == 3
     assert data["limit"] == 2
     assert data["offset"] == 0
 

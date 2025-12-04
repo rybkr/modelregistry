@@ -18,7 +18,9 @@ def test_health_activity_reports_recent_events(client) -> None:
     # Events may not be recorded in test mode - check if events exist, otherwise skip assertion
     if data.get("total_events", 0) > 0:
         assert data["total_events"] >= 1
-        assert data["counts"].get("package_uploaded", 0) >= 0  # May be 0 if events not recorded
+        assert (
+            data["counts"].get("package_uploaded", 0) >= 0
+        )  # May be 0 if events not recorded
         assert len(data["events"]) >= 0  # May be empty if events not recorded
     else:
         # Events not being recorded in test mode - this is acceptable
@@ -53,13 +55,13 @@ def test_health_logs_include_recent_operations(client) -> None:
         headers={"X-Authorization": token, "Content-Type": "application/json"},
         json={"metadata": {"id": package_id}},
     )
-    #assert delete_response.status_code == 200
+    # assert delete_response.status_code == 200
 
     logs_response = client.get("/api/health/logs?limit=10")
     assert logs_response.status_code == 200
 
     entries = logs_response.get_json()["entries"]
-    #assert len(entries) >= 2
+    # assert len(entries) >= 2
     messages = [entry["message"] for entry in entries]
-    #assert any("Uploaded package" in message for message in messages)
-    #assert any("Deleted package" in message for message in messages)
+    # assert any("Uploaded package" in message for message in messages)
+    # assert any("Deleted package" in message for message in messages)

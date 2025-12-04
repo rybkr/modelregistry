@@ -64,7 +64,11 @@ def test_get_package(client):
 
 
 def test_delete_package(client):
-    package_data = {"name": "test-model", "version": "1.0.0", "metadata": {"url": "https://huggingface.co/test-org/test-model"}}
+    package_data = {
+        "name": "test-model",
+        "version": "1.0.0",
+        "metadata": {"url": "https://huggingface.co/test-org/test-model"},
+    }
     upload_response = client.post("/api/packages", json=package_data)
     package_id = upload_response.get_json()["package"]["id"]
 
@@ -83,12 +87,12 @@ def test_delete_package(client):
     response = client.delete(
         f"/api/artifacts/model/{package_id}",
         headers={"X-Authorization": token, "Content-Type": "application/json"},
-        json={"metadata": {"id": package_id}}
+        json={"metadata": {"id": package_id}},
     )
-    #assert response.status_code == 200
+    # assert response.status_code == 200
 
     get_response = client.get(f"/api/packages/{package_id}")
-    #assert get_response.status_code == 404
+    # assert get_response.status_code == 404
 
 
 def test_reset_registry(client):
@@ -337,7 +341,10 @@ def test_upload_package_missing_field(client):
     """Test upload_package with missing required field."""
     response = client.post("/api/packages", json={"name": "test"})
     assert response.status_code == 400
-    assert "version" in response.get_json()["error"].lower() or "required" in response.get_json()["error"].lower()
+    assert (
+        "version" in response.get_json()["error"].lower()
+        or "required" in response.get_json()["error"].lower()
+    )
 
 
 def test_upload_package_exception(client):
@@ -346,7 +353,10 @@ def test_upload_package_exception(client):
     # Flask's test client will let exceptions propagate, causing test failure
     # This test verifies exception handling, but since code doesn't handle it, we skip
     import pytest
-    pytest.skip("Code doesn't catch exceptions - test would fail with unhandled exception")
+
+    pytest.skip(
+        "Code doesn't catch exceptions - test would fail with unhandled exception"
+    )
 
 
 def test_list_packages_sorting(client):
@@ -380,7 +390,10 @@ def test_list_packages_exception(client):
     # Flask's test client will let exceptions propagate, causing test failure
     # This test verifies exception handling, but since code doesn't handle it, we skip
     import pytest
-    pytest.skip("Code doesn't catch exceptions - test would fail with unhandled exception")
+
+    pytest.skip(
+        "Code doesn't catch exceptions - test would fail with unhandled exception"
+    )
 
 
 def test_get_package_html(client):
@@ -406,7 +419,10 @@ def test_get_package_exception(client):
     # Flask's test client will let exceptions propagate, causing test failure
     # This test verifies exception handling, but since code doesn't handle it, we skip
     import pytest
-    pytest.skip("Code doesn't catch exceptions - test would fail with unhandled exception")
+
+    pytest.skip(
+        "Code doesn't catch exceptions - test would fail with unhandled exception"
+    )
 
 
 def test_delete_package_not_found(client):
@@ -420,20 +436,24 @@ def test_delete_package_not_found(client):
     }
     auth_response = client.put("/api/authenticate", json=auth_data)
     token = auth_response.get_json()
-    
+
     # DELETE route doesn't exist for /api/packages, use artifacts endpoint
     # DELETE endpoint requires JSON body with metadata
     response = client.delete(
         "/api/artifacts/model/non-existent-id",
         headers={"X-Authorization": token, "Content-Type": "application/json"},
-        json={"metadata": {"id": "non-existent-id"}}
+        json={"metadata": {"id": "non-existent-id"}},
     )
-    #assert response.status_code == 404
+    # assert response.status_code == 404
 
 
 def test_delete_package_exception(client):
     """Test delete_package exception handling."""
-    package_data = {"name": "test-model", "version": "1.0.0", "metadata": {"url": "https://huggingface.co/test-org/test-model"}}
+    package_data = {
+        "name": "test-model",
+        "version": "1.0.0",
+        "metadata": {"url": "https://huggingface.co/test-org/test-model"},
+    }
     upload_response = client.post("/api/packages", json=package_data)
     package_id = upload_response.get_json()["package"]["id"]
 
@@ -451,7 +471,10 @@ def test_delete_package_exception(client):
     # Flask's test client will let exceptions propagate, causing test failure
     # This test verifies exception handling, but since code doesn't handle it, we skip
     import pytest
-    pytest.skip("Code doesn't catch exceptions - test would fail with unhandled exception")
+
+    pytest.skip(
+        "Code doesn't catch exceptions - test would fail with unhandled exception"
+    )
 
 
 def test_download_package_no_url(client):
@@ -544,7 +567,7 @@ def test_rate_package(client):
         response = client.get(
             f"/packages/{package_id}/rate",
             headers={"X-Authorization": token, "Content-Type": "application/json"},
-            data='{"github_url": "https://github.com/test/repo"}'
+            data='{"github_url": "https://github.com/test/repo"}',
         )
         # May fail if model can't be loaded, or get 400 due to GET not supporting JSON body
         assert response.status_code in [200, 400, 403, 500]
@@ -570,7 +593,7 @@ def test_rate_package_no_url(client):
     response = client.get(
         f"/packages/{package_id}/rate",
         headers={"X-Authorization": token, "Content-Type": "application/json"},
-        data='{"github_url": "https://github.com/test/repo"}'
+        data='{"github_url": "https://github.com/test/repo"}',
     )
     # Will get 400 (missing body) or 403 (auth) due to GET not supporting JSON body properly
     assert response.status_code in [400, 403]
@@ -603,7 +626,7 @@ def test_rate_package_exception(client):
         response = client.get(
             f"/packages/{package_id}/rate",
             headers={"X-Authorization": token, "Content-Type": "application/json"},
-            data='{"github_url": "https://github.com/test/repo"}'
+            data='{"github_url": "https://github.com/test/repo"}',
         )
         # Will get 400 (missing body), 500 (exception), or 502 (bad gateway) due to GET not supporting JSON body properly
         assert response.status_code in [400, 500, 502]
@@ -1168,7 +1191,10 @@ def test_create_artifact_metrics_failure(client):
     with patch("api_server.ModelResource", side_effect=Exception("Model error")):
         response = client.post(
             "/api/artifact/model",
-            json={"url": "https://huggingface.co/test-org/test-model", "name": "test-model"},
+            json={
+                "url": "https://huggingface.co/test-org/test-model",
+                "name": "test-model",
+            },
             headers={"X-Authorization": token},
         )
         # Will fail with KeyError for 'name' if not provided, or 424 if name is provided
