@@ -1606,6 +1606,12 @@ def search_artifacts_by_regex():
             pkg_type = infer_artifact_type(package)
             artifacts.append(package_to_artifact_metadata(package, pkg_type))
 
+        if len(artifacts) == 0:
+            logger.info(
+                f"byRegEx search found no artifacts matching pattern: {regex_pattern}"
+            )
+            return jsonify({"error": "No artifact found under this regex."}), 404
+
         logger.info(
             f"byRegEx search completed successfully: {len(artifacts)} artifacts found"
         )

@@ -181,16 +181,30 @@ class RegistryStorage:
                     continue  # Skip readme search if name matched
 
                 # Search readme if present
+                # Find readme key (case-insensitive lookup)
+                readme_key = None
                 if "readme" in package.metadata:
-                    readme_text = str(package.metadata.get("readme", ""))
-                    # Limit readme length for search
-                    if len(readme_text) > 10000:
-                        readme_text = readme_text[:10000]
+                    readme_key = "readme"
+                else:
+                    # Fallback: case-insensitive search for readme key
+                    for key in package.metadata.keys():
+                        if isinstance(key, str) and key.lower() == "readme":
+                            readme_key = key
+                            break
 
-                    # Search readme with timeout
-                    match = regex_search_with_timeout(pattern, readme_text, timeout_seconds=0.5)
-                    if match:
-                        results.append(package)
+                if readme_key:
+                    readme_value = package.metadata.get(readme_key)
+                    # Only search if readme value is a non-empty string
+                    if readme_value is not None and isinstance(readme_value, str) and readme_value.strip():
+                        readme_text = readme_value.strip()
+                        # Limit readme length for search
+                        if len(readme_text) > 10000:
+                            readme_text = readme_text[:10000]
+
+                        # Search readme with timeout
+                        match = regex_search_with_timeout(pattern, readme_text, timeout_seconds=0.5)
+                        if match:
+                            results.append(package)
 
             logger.debug(f"Regex search completed: {len(results)} packages found")
         else:
