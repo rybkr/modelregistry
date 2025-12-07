@@ -764,10 +764,15 @@ def update_artifact(artifact_type, artifact_id):
 def delete_artifact(artifact_type, artifact_id):
     """Delete an artifact from the registry.
 
-    Request body must match parameters.
+    Uses only path parameters (artifact_type and artifact_id) to identify and delete the artifact.
+    No request body is required.
+
+    Args:
+        artifact_type: Type of artifact (model, dataset, or code)
+        artifact_id: Unique identifier for the artifact
 
     Returns:
-        tuple: (200) or error response
+        tuple: (200) on success, or error response (400/403/404)
     """
     is_valid, error_response = check_auth_header()
     if not is_valid:
@@ -777,24 +782,6 @@ def delete_artifact(artifact_type, artifact_id):
         return jsonify({"error": f"Invalid artifact type: {artifact_type}"}), 400
     if not validate_artifact_id(artifact_id):
         return jsonify({"error": "Invalid artifact ID format"}), 400
-
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "Request body required"}), 400
-
-    metadata = data.get("metadata", {})
-    if metadata.get("id") != artifact_id:
-        return jsonify(
-            {"error": "Artifact ID in body does not match path parameter"}
-        ), 400
-
-    if metadata.get("name") and metadata.get("name") != artifact_id:
-        pass
-
-    if metadata.get("type") != artifact_type:
-        return jsonify(
-            {"error": "Artifact type in body does not match path parameter"}
-        ), 400
 
     package = storage.get_artifact_by_type_and_id(artifact_type, artifact_id)
     if not package:
