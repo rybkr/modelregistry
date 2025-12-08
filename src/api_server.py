@@ -817,7 +817,7 @@ def create_artifact(artifact_type):
     logger.info(f"artifact data: {data}")
 
     url = data["url"]
-    model_name = data["name"]
+    artifact_name = data["name"]
 
     # Check if artifact already exists (by URL)
     for package in storage.packages.values():
@@ -837,6 +837,9 @@ def create_artifact(artifact_type):
     net_score.evaluate(list(results.values()))
     results[net_score.name] = net_score
 
+    # Extract artifact name from URL
+    parts = url.rstrip("/").split("/")
+
     # Store scores
     scores = {}
     for name, metric in results.items():
@@ -846,7 +849,7 @@ def create_artifact(artifact_type):
     package_id = str(uuid.uuid4())
     package = Package(
         id=package_id,
-        name=model_name,
+        name=artifact_name,
         version="1.0.0",
         uploaded_by=DEFAULT_USERNAME,
         upload_timestamp=datetime.now(timezone.utc),
