@@ -1,18 +1,18 @@
-from flask import Flask, jsonify, request, render_template, Response, send_file
+from flask import Flask, jsonify, request, render_template, Response, send_file, url_for
 from flask_cors import CORS
 from typing import Optional
 from datetime import datetime, timezone
-from urllib.parse import urlparse
-
 import uuid
 import os
 import csv
 import json
 import io
 import logging
+
 import zipfile
 import tempfile
-import re
+from pathlib import Path
+from urllib.parse import urlparse
 
 from registry_models import Package
 from storage import storage
@@ -21,11 +21,14 @@ from metrics.net_score import NetScore
 from models import Model
 from resources.model_resource import ModelResource
 
+# Configure logging for debugging authentication and reset issues
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger("api_server")
+logger = logging.getLogger('api_server')
 
+# Get the directory where this file is located (src directory)
 SRC_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATE_DIR = os.path.join(SRC_DIR, "templates")
 STATIC_DIR = os.path.join(SRC_DIR, "static")
@@ -39,9 +42,7 @@ CORS(app)
 def not_found(error):
     """Return JSON 404 errors for API requests."""
     accept_header = request.headers.get("Accept", "")
-    if request.path.startswith("/api/") or (
-        request.path.startswith("/packages/") and "/rate" in request.path
-    ):
+    if request.path.startswith('/api/') or (request.path.startswith('/packages/') and '/rate' in request.path):
         return jsonify({"error": "Not found"}), 404
     if "application/json" in accept_header:
         return jsonify({"error": "Not found"}), 404
@@ -52,42 +53,32 @@ def not_found(error):
 def internal_error(error):
     """Return JSON 500 errors for API requests."""
     accept_header = request.headers.get("Accept", "")
-    if request.path.startswith("/api/") or (
-        request.path.startswith("/packages/") and "/rate" in request.path
-    ):
+    if request.path.startswith('/api/') or (request.path.startswith('/packages/') and '/rate' in request.path):
         return jsonify({"error": "Internal server error"}), 500
     if "application/json" in accept_header:
         return jsonify({"error": "Internal server error"}), 500
     return error
 
-
 DEFAULT_USERNAME = "ece30861defaultadminuser"
+# Password from autograder - uses "packages" not "artifacts" as shown in OpenAPI spec example
 DEFAULT_PASSWORD = "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE packages;"
 
-_valid_tokens = set()
 
-DEFAULT_TOKEN = "bearer default-admin-token"
-
-
-def initialize_default_token():
-    """Initialize the default admin token for the reset/initial state.
-
-    Per spec: In its initial and "Reset" state, the system must have a default user.
-    This function ensures the default token is available.
-    """
-    _valid_tokens.add(DEFAULT_TOKEN)
-
-
-def check_auth_header():
+# Authentication helper
+def check_auth_header(required_permission: Optional[str] = None):
     """Check if X-Authorization header is present and token is valid.
 
     Per OpenAPI spec, X-Authorization header is required for certain endpoints.
-    Validates header presence and token validity against _valid_tokens set.
+    Validates header presence, token validity, and optionally checks permissions.
+
+    Args:
+        required_permission: Optional permission to check (upload, search, download)
 
     Returns:
-        tuple: (is_valid, error_response)
+        tuple: (is_valid, error_response, username)
             - is_valid (bool): True if header present and token valid, False otherwise
             - error_response (Optional[tuple]): (json_response, status_code) if invalid, None if valid
+            - username (Optional[str]): Username if valid, None otherwise
     """
     auth_header = request.headers.get("X-Authorization")
     logger.info(f"check_auth_header called, header present: {auth_header is not None}")
@@ -95,36 +86,53 @@ def check_auth_header():
     if not auth_header:
         logger.warning("Auth failed: no X-Authorization header")
         return False, (
-            jsonify(
-                {
-                    "error": "Authentication failed due to invalid or missing AuthenticationToken"
-                }
-            ),
+            jsonify({
+                "error": "Authentication failed due to invalid or missing AuthenticationToken"
+            }),
             403,
-        )
+        ), None
 
+    # Normalize token: strip whitespace and quotes (handles JSON-encoded strings)
     token_value = auth_header.strip().strip('"').strip("'")
-    is_default = token_value == DEFAULT_TOKEN
-    is_in_valid_set = token_value in _valid_tokens
 
-    logger.info(
-        f"Token validation: is_default={is_default}, is_in_valid_set={is_in_valid_set}, valid_tokens_count={len(_valid_tokens)}"
-    )
+    # Validate token and increment usage counter
+    username = storage.validate_and_use_token(token_value)
 
-    if not is_default and not is_in_valid_set:
-        logger.warning(f"Auth failed: token not recognized")
+    if not username:
+        logger.warning(f"Auth failed: token not recognized or expired")
         return False, (
-            jsonify(
-                {
-                    "error": "Authentication failed due to invalid or missing AuthenticationToken"
-                }
-            ),
+            jsonify({
+                "error": "Authentication failed due to invalid or missing AuthenticationToken"
+            }),
             403,
-        )
+        ), None
 
-    return True, None
+    # Check permission if required
+    if required_permission:
+        user = storage.get_user(username)
+        if not user:
+            logger.warning(f"Auth failed: user {username} not found")
+            return False, (
+                jsonify({
+                    "error": "Authentication failed due to invalid or missing AuthenticationToken"
+                }),
+                403,
+            ), None
+
+        if not user.has_permission(required_permission) and not user.is_admin:
+            logger.warning(f"Auth failed: user {username} lacks {required_permission} permission")
+            return False, (
+                jsonify({
+                    "error": f"User does not have {required_permission} permission"
+                }),
+                403,
+            ), None
+
+    logger.info(f"Auth successful for user: {username}")
+    return True, None, username
 
 
+# Artifact conversion helpers
 def infer_artifact_type(package: Package) -> str:
     """Infer artifact type from package URL or metadata.
 
@@ -142,9 +150,7 @@ def infer_artifact_type(package: Package) -> str:
     return "model"
 
 
-def package_to_artifact_metadata(
-    package: Package, artifact_type: Optional[str] = None
-) -> dict:
+def package_to_artifact_metadata(package: Package, artifact_type: Optional[str] = None) -> dict:
     """Convert Package to ArtifactMetadata format.
 
     Args:
@@ -156,7 +162,11 @@ def package_to_artifact_metadata(
     """
     if artifact_type is None:
         artifact_type = infer_artifact_type(package)
-    return {"name": package.name, "id": package.id, "type": artifact_type}
+    return {
+        "name": package.name,
+        "id": package.id,
+        "type": artifact_type
+    }
 
 
 def package_to_artifact(package: Package, artifact_type: Optional[str] = None) -> dict:
@@ -172,16 +182,21 @@ def package_to_artifact(package: Package, artifact_type: Optional[str] = None) -
     url = package.metadata.get("url", "")
     artifact_data = {"url": url}
 
+    # Generate download_url - per OpenAPI spec, server should generate this
+    # Use the package download endpoint with the package ID
     try:
+        # Generate download URL pointing to the package download endpoint
+        # Format: /packages/<package_id>/download
         download_url = f"/packages/{package.id}/download"
         artifact_data["download_url"] = download_url
     except Exception:
+        # If URL generation fails, only include if already in metadata
         if "download_url" in package.metadata:
             artifact_data["download_url"] = package.metadata["download_url"]
 
     return {
         "metadata": package_to_artifact_metadata(package, artifact_type),
-        "data": artifact_data,
+        "data": artifact_data
     }
 
 
@@ -194,11 +209,11 @@ def validate_artifact_type(artifact_type: str) -> bool:
     Returns:
         bool: True if valid, False otherwise
     """
-    return artifact_type in {"model", "dataset", "code"}
+    return artifact_type in ["model", "dataset", "code"]
 
 
 def validate_artifact_id(artifact_id: str) -> bool:
-    """Validate artifact ID matches pattern ^[a-zA-Z0-9-]+$.
+    """Validate artifact ID matches pattern ^[a-zA-Z0-9\-]+$.
 
     Args:
         artifact_id: ID to validate
@@ -206,7 +221,731 @@ def validate_artifact_id(artifact_id: str) -> bool:
     Returns:
         bool: True if valid, False otherwise
     """
-    return bool(re.match(r"^[a-zA-Z0-9\-]+$", artifact_id))
+    import re
+    return bool(re.match(r'^[a-zA-Z0-9\-]+$', artifact_id))
+
+
+@app.route("/api/health", methods=["GET"])
+def health():
+    """Check the health status of the Model Registry API.
+
+    Returns health information including server status, current timestamp,
+    the total number of packages in the registry.
+
+    Returns:
+        tuple: JSON response with health data and 200 status code
+            - status (str): Health status indicator
+            - timestamp (str): Current UTC timestamp in ISO format
+            - packages_count (int): Total number of packages stored
+    """
+    return jsonify(
+        {
+            "status": "healthy",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "packages_count": len(storage.packages),
+        }
+    ), 200
+
+
+@app.route("/", methods=["GET"])
+def index():
+    """Serve the main package listing page or API info.
+
+    Returns:
+        HTML or JSON: Package listing page for browsers, API info for API requests
+    """
+    # Check if this is an API request
+    # Default to JSON for programmatic requests (no Accept header or Accept: */*)
+    # Only return HTML if explicitly requesting HTML
+    accept_header = request.headers.get("Accept", "")
+    wants_html = (
+        "text/html" in accept_header
+        and "application/json" not in accept_header
+        and accept_header != "*/*"
+        and accept_header != ""
+    )
+
+    if wants_html:
+        return render_template("index.html")
+    else:
+        # Default to JSON for API requests and test clients
+        return jsonify({"message": "Model Registry API v1.0", "status": "running"}), 200
+
+
+@app.route("/api", methods=["GET"])
+def api_root():
+    """Return basic API information.
+
+    Provides version and status information for the Model Registry API.
+
+    Returns:
+        tuple: JSON response with API metadata and 200 status code
+            - message (str): API version identifier
+            - status (str): API running status
+    """
+    return jsonify({"message": "Model Registry API v1.0", "status": "running"}), 200
+
+
+@app.route("/packages", methods=["POST"])
+@app.route("/api/packages", methods=["POST"])
+def upload_package():
+    """Upload a new package to the registry.
+
+    Creates a new package entry with the provided name, version, and optional
+    metadata. Automatically assigns a unique ID and records upload timestamp.
+
+    Request Body (JSON):
+        - name (str, required): Package name
+        - version (str, required): Package version
+        - content (str, optional): Package content
+        - metadata (dict, optional): Additional package metadata
+
+    Returns:
+        tuple: JSON response and HTTP status code
+            Success (201):
+                - message (str): Success confirmation
+                - package (dict): Created package details
+            Error (400): Missing required fields or no data provided
+            Error (403): Authentication failed or missing upload permission
+            Error (500): Server error during package creation
+    """
+    # Check auth with upload permission
+    is_valid, error_response, _ = check_auth_header(required_permission="upload")
+    if not is_valid:
+        return error_response
+
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+
+        required_fields = ["name", "version"]
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"Missing required field: {field}"}), 400
+
+        package_id = str(uuid.uuid4())
+        package = Package(
+            id=package_id,
+            name=data["name"],
+            version=data["version"],
+            uploaded_by=DEFAULT_USERNAME,
+            upload_timestamp=datetime.now(timezone.utc),
+            size_bytes=len(data.get("content", "")),
+            metadata=data.get("metadata", {}),
+            s3_key=None,
+        )
+
+        storage.create_package(package)
+
+        storage.record_event(
+            "package_uploaded",
+            package=package,
+            actor="api",
+            details={
+                "source": "direct_upload",
+                "content_length": len(data.get("content", "")),
+            },
+        )
+
+        return jsonify(
+            {"message": "Package uploaded successfully", "package": package.to_dict()}
+        ), 201
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/packages", methods=["GET"])
+@app.route("/api/packages", methods=["GET"])
+def list_packages():
+    """List packages with optional search and pagination.
+
+    Retrieves a paginated list of packages. Supports searching by query string
+    with optional regex matching.
+
+    Query Parameters:
+        - offset (int, optional): Starting index for pagination (default: 0)
+        - limit (int, optional): Maximum number of results (default: 100)
+        - query (str, optional): Search query string
+        - regex (bool, optional): Enable regex search mode (default: false)
+        - version (str, optional): A version string filter.
+        - sort-field (str, optional): A string specifying one of the following sort fields: 'alpha', 'version', 'size', 'date'
+        - sort-order (str, optional): Ascending or descending
+
+    Returns:
+        tuple: JSON response and HTTP status code
+            Success (200):
+                - packages (list): Array of package objects
+                - offset (int): Current offset value
+                - limit (int): Current limit value
+                - total (int): Total number of packages in registry
+            Error (500): Server error during retrieval
+    """
+    try:
+        offset = int(request.args.get("offset", 0))
+        limit = int(request.args.get("limit", 100))
+        query = request.args.get("query", "")
+        regex = request.args.get("regex", "false").lower() == "true"
+        version = request.args.get("version", "")
+        sortField = request.args.get("sort-field", "alpha")
+        sortOrder = request.args.get("sort-order", "ascending")
+
+        # Step 1: Get all packages (no pagination yet)
+        if query:
+            packages = storage.search_packages(query, use_regex=regex)
+        else:
+            # Get ALL packages without pagination limits
+            packages = list(storage.packages.values())
+
+        # Step 2: Filter by version (convert filter iterator to list immediately)
+        if version:
+            packages = list(filter(lambda package: package.check_version(version), packages))
+
+        # Step 3: Sort
+        if sortField == "alpha":
+            packages = sorted(packages, key=lambda package: package.name.casefold())
+        elif sortField == "date":
+            packages = sorted(packages, key=lambda package: package.upload_timestamp)
+        elif sortField == "size":
+            packages = sorted(packages, key=lambda package: package.size_bytes)
+        elif sortField == "version":
+            packages = sorted(packages, key=lambda package: package.get_version_int())
+
+        if sortOrder == "descending":
+            packages.reverse()
+
+        # Step 4: Paginate (apply offset/limit)
+        paginated_packages = packages[offset : offset + limit]
+
+        return jsonify(
+            {
+                "packages": [p.to_dict() for p in paginated_packages],
+                "offset": offset,
+                "limit": limit,
+                "total": len(packages),  # Total count of filtered results, not all packages
+            }
+        ), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/packages/<package_id>", methods=["GET"])
+@app.route("/api/packages/<package_id>", methods=["GET"])
+def get_package(package_id):
+    """Retrieve a specific package by ID.
+
+    Fetches detailed information about a package using its unique identifier.
+    Returns JSON for API requests or HTML page for browser requests.
+
+    Args:
+        package_id (str): Unique package identifier (UUID)
+
+    Returns:
+        tuple or HTML: JSON response and HTTP status code, or HTML page
+            Success (200): Package details as dictionary or HTML page
+            Error (404): Package not found
+            Error (500): Server error during retrieval
+    """
+    # Check if this is an API request
+    # Default to JSON for programmatic requests (no Accept header or Accept: */*)
+    # Only return HTML if explicitly requesting HTML
+    accept_header = request.headers.get("Accept", "")
+    content_type = request.headers.get("Content-Type", "")
+
+    # Return HTML only if explicitly requesting HTML
+    wants_html = (
+        "text/html" in accept_header and "application/json" not in accept_header
+    )
+
+    if wants_html:
+        # Return HTML page for browser requests
+        return render_template("package_detail.html", package_id=package_id)
+    else:
+        # Default to JSON for API requests
+        try:
+            package = storage.get_package(package_id)
+            if not package:
+                return jsonify({"error": "Package not found"}), 404
+            return jsonify(package.to_dict()), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/packages/<package_id>", methods=["DELETE"])
+def delete_package(package_id):
+    """Delete a package from the registry.
+
+    Removes a package and all associated data using its unique identifier.
+
+    Args:
+        package_id (str): Unique package identifier (UUID)
+
+    Returns:
+        tuple: JSON response and HTTP status code
+            Success (200): Deletion confirmation message
+            Error (404): Package not found
+            Error (500): Server error during deletion
+    """
+    try:
+        deleted_package = storage.delete_package(package_id)
+        if deleted_package is None:
+            return jsonify({"error": "Package not found"}), 404
+
+        storage.record_event(
+            "package_deleted",
+            package=deleted_package,
+            actor="api",
+            details={"source": "api"},
+        )
+        return jsonify({"message": "Package deleted successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/packages/<package_id>/download", methods=["GET"])
+def download_package(package_id):
+    """Download a package as a ZIP file.
+
+    Downloads the complete model package or specific components based on the
+    content parameter. For HuggingFace models, fetches files from HuggingFace.
+    For uploaded packages, returns stored content.
+
+    Args:
+        package_id (str): Unique package identifier (UUID)
+
+    Query Parameters:
+        content (str, optional): What to download - 'full', 'weights', or 'datasets'
+            Default: 'full'
+
+    Returns:
+        file: ZIP file download containing the requested package content
+        tuple: JSON error response and HTTP status code on failure
+            Error (403): Authentication failed or missing download permission
+            Error (404): Package not found
+            Error (400): Invalid content type or missing URL
+            Error (500): Server error during download preparation
+    """
+    # Check auth with download permission
+    is_valid, error_response, _ = check_auth_header(required_permission="download")
+    if not is_valid:
+        return error_response
+
+    try:
+        package = storage.get_package(package_id)
+        if not package:
+            return jsonify({"error": "Package not found"}), 404
+
+        content_type = request.args.get("content", "full")
+        if content_type not in ["full", "weights", "datasets"]:
+            return jsonify({"error": "Invalid content type. Must be 'full', 'weights', or 'datasets'"}), 400
+
+        # Get the model URL from metadata
+        url = package.metadata.get("url")
+        if not url:
+            return jsonify({"error": "Package has no associated model URL to download"}), 400
+
+        # Fetch model files from HuggingFace
+        model = Model(model=ModelResource(url=url))
+
+        # Determine file patterns based on content type
+        # Use **/ prefix to match files in all subdirectories recursively
+        if content_type == "weights":
+            # Model weight files (matches in all subdirectories)
+            patterns = [
+                "**/*.bin", "**/*.safetensors", "**/*.h5", "**/*.pt",
+                "**/*.onnx", "**/*.tflite", "**/config.json", "**/*.json"
+            ]
+        elif content_type == "datasets":
+            # Dataset files (matches in all subdirectories)
+            patterns = [
+                "**/*.csv", "**/*.json", "**/*.parquet",
+                "**/*.arrow", "**/*.txt", "**/dataset_info.json"
+            ]
+        else:  # full
+            patterns = None  # Get all files
+
+        # Create a temporary file (not directory) for the ZIP
+        # Using delete=False so we can control when it's deleted
+        temp_zip = tempfile.NamedTemporaryFile(
+            suffix='.zip',
+            prefix=f"{package.name}-{package.version}-",
+            delete=False
+        )
+        temp_zip_path = temp_zip.name
+        temp_zip.close()
+
+        try:
+            # Create ZIP file with model contents
+            files_added = 0
+            with zipfile.ZipFile(temp_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                with model.model.open_files(allow_patterns=patterns) as repo:
+                    # Add all files from the repository to the ZIP
+                    for file_path in repo.glob("**/*"):
+                        if file_path.is_file():
+                            # Get relative path from repo root
+                            relative_path = file_path.relative_to(repo.root)
+
+                            # Add file directly to ZIP (handles binary correctly)
+                            # This writes the file from disk into the ZIP archive
+                            zipf.write(file_path, arcname=str(relative_path))
+                            files_added += 1
+
+            if files_added == 0:
+                # Clean up temp file
+                os.unlink(temp_zip_path)
+                return jsonify({"error": "No files found matching the specified content type"}), 400
+
+            # Record download event
+            storage.record_event(
+                "package_downloaded",
+                package=package,
+                actor="api",
+                details={
+                    "content_type": content_type,
+                    "files_count": files_added
+                },
+            )
+
+            # Return the ZIP file
+            # Flask will handle reading and sending the file, then we clean up
+            response = send_file(
+                temp_zip_path,
+                mimetype='application/zip',
+                as_attachment=True,
+                download_name=f"{package.name}-{package.version}.zip"
+            )
+
+            # Register cleanup function to delete temp file after response is sent
+            @response.call_on_close
+            def cleanup():
+                try:
+                    if os.path.exists(temp_zip_path):
+                        os.unlink(temp_zip_path)
+                except Exception:
+                    pass  # Best effort cleanup
+
+            return response
+
+        except Exception as e:
+            # Clean up temp file on error
+            try:
+                if os.path.exists(temp_zip_path):
+                    os.unlink(temp_zip_path)
+            except Exception:
+                pass
+            raise  # Re-raise the original exception
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to download package: {str(e)}"}), 500
+
+
+@app.route("/packages/<package_id>/rate", methods=["GET"])
+@app.route("/api/packages/<package_id>/rate", methods=["GET"])
+def rate_package(package_id):
+    """Calculate and return quality metrics for a package.
+
+    Evaluates a package by computing various quality metrics based on its
+    associated URL. The package must have a URL in its metadata.
+
+    Args:
+        package_id (str): Unique package identifier (UUID)
+
+    Returns:
+        tuple: JSON response and HTTP status code
+            Success (200): Dictionary of metric scores and latencies
+                Each metric contains:
+                    - score (float): Metric score value
+                    - latency_ms (float): Computation time in milliseconds
+            Error (404): Package not found
+            Error (400): Package missing URL in metadata
+            Error (500): Server error during metric computation
+    """
+    try:
+        package = storage.get_package(package_id)
+        if not package:
+            return jsonify({"error": "Package not found"}), 404
+
+        url = package.metadata.get("url")
+        if not url:
+            return jsonify({"error": "No URL in package metadata"}), 400
+
+        model = Model(model=ModelResource(url=url))
+        results = compute_all_metrics(model)
+
+        scores = {}
+        for name, metric in results.items():
+            scores[name] = {"score": metric.value, "latency_ms": metric.latency_ms}
+
+        storage.record_event(
+            "metrics_evaluated",
+            package=package,
+            actor="api",
+            details={"metrics": list(scores.keys())},
+        )
+
+        return jsonify(scores), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/ingest", methods=["POST"])
+@app.route("/api/ingest", methods=["POST"])
+def ingest_model():
+    """Ingest and validate a HuggingFace model into the registry.
+
+    Evaluates a HuggingFace model URL against quality thresholds and creates
+    a package entry if all metrics pass. All non-latency metrics must score
+    at least 0.5 to be accepted.
+
+    Request Body (JSON):
+        - url (str, required): HuggingFace model URL (must start with
+          'https://huggingface.co/')
+
+    Quality Thresholds (minimum 0.5):
+        All non-latency metrics computed via compute_all_metrics:
+        - license
+        - ramp_up_time
+        - bus_factor
+        - dataset_and_code_score
+        - dataset_quality
+        - code_quality
+        - performance_claims
+        - size_score (max of device scores must be >= 0.5: raspberry_pi, jetson_nano, desktop_pc, aws_server)
+        - net_score (aggregate score computed from all metrics)
+
+    Returns:
+        tuple: JSON response and HTTP status code
+            Success (201):
+                - message (str): Success confirmation
+                - package (dict): Created package with embedded scores
+            Error (400): Invalid URL, missing URL, or failed quality threshold
+            Error (403): Authentication failed or missing upload permission
+            Error (500): Server error during ingestion or evaluation
+    """
+    # Check auth with upload permission
+    is_valid, error_response, _ = check_auth_header(required_permission="upload")
+    if not is_valid:
+        return error_response
+
+    try:
+        data = request.get_json()
+        if not data or "url" not in data:
+            return jsonify({"error": "URL required"}), 400
+
+        url = data["url"]
+
+        if not url.startswith("https://huggingface.co/"):
+            return jsonify({"error": "URL must be a HuggingFace model URL"}), 400
+
+        try:
+            model = Model(model=ModelResource(url=url))
+            results = compute_all_metrics(model)
+        except Exception as e:
+            return jsonify({"error": f"Failed to evaluate model: {str(e)}"}), 500
+
+        # Compute net_score from all metrics
+        net_score = NetScore()
+        net_score.evaluate(list(results.values()))
+        results[net_score.name] = net_score
+
+        # Validate all non-latency metrics from the rate behavior
+        # These are all metrics returned by compute_all_metrics plus net_score
+
+        for metric_name, metric in results.items():
+
+            # Handle size_score which is a dict of device scores
+            if metric_name == "size_score":
+                if isinstance(metric.value, dict) and len(metric.value) > 0:
+                    # Check that the max of all device scores is >= 0.5
+                    max_score = max(metric.value.values())
+                    if max_score < 0.5:
+                        return jsonify(
+                            {"error": f"Failed threshold: {metric_name} max score {max_score:.3f} < 0.5"}
+                        ), 400
+                else:
+                    # Invalid size_score, fail
+                    return jsonify(
+                        {"error": f"Failed threshold: {metric_name} is invalid or empty"}
+                    ), 400
+            # Handle numeric metrics
+            elif isinstance(metric.value, (int, float)):
+                if metric.value < 0.5:
+                    return jsonify(
+                        {"error": f"Failed threshold: {metric_name} {metric.value:.3f} < 0.5"}
+                    ), 400
+            else:
+                # Unknown metric type, fail for safety
+                return jsonify(
+                    {"error": f"Failed threshold: {metric_name} has invalid type"}
+                ), 400
+
+        parts = url.rstrip("/").split("/")
+        model_name = parts[-1] if parts else "unknown"
+
+        scores = {}
+        for name, metric in results.items():
+            scores[name] = {"score": metric.value, "latency_ms": metric.latency_ms}
+
+        package_id = str(uuid.uuid4())
+        package = Package(
+            id=package_id,
+            name=model_name,
+            version="1.0.0",
+            uploaded_by=DEFAULT_USERNAME,
+            upload_timestamp=datetime.now(timezone.utc),
+            size_bytes=0,
+            metadata={"url": url, "scores": scores},
+            s3_key=None,
+        )
+
+        storage.create_package(package)
+
+        storage.record_event(
+            "model_ingested",
+            package=package,
+            actor="api",
+            details={"source": "huggingface", "url": url},
+        )
+
+        return jsonify(
+            {"message": "Model ingested successfully", "package": package.to_dict()}
+        ), 201
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/ingest/upload", methods=["POST"])
+def ingest_upload():
+    """Ingest packages from uploaded CSV or JSON file.
+
+    Accepts a file upload (CSV or JSON format) containing package data.
+    Validates and stores all packages from the file.
+
+    File Format Requirements:
+
+    CSV Format - Must include columns: name, version
+    Optional columns: metadata (JSON string)
+    Example:
+        name,version,metadata
+        package1,1.0.0,"{\"description\": \"test\"}"
+        package2,2.0.0,"{\"key\": \"value\"}"
+
+    JSON Format - Array of objects or single object
+    Required fields: name, version
+    Optional fields: metadata (object)
+    Example:
+        [
+            {"name": "package1", "version": "1.0.0", "metadata": {"key": "value"}},
+            {"name": "package2", "version": "2.0.0"}
+        ]
+
+    Request:
+        - Content-Type: multipart/form-data
+        - file: CSV or JSON file
+
+    Returns:
+        tuple: JSON response and HTTP status code
+            Success (201):
+                - message (str): Success confirmation
+                - imported_count (int): Number of packages successfully imported
+                - packages (list): List of created package details
+            Error (400): No file, invalid format, validation errors
+            Error (403): Authentication failed or missing upload permission
+            Error (500): Server error during processing
+    """
+    # Check auth with upload permission
+    is_valid, error_response, _ = check_auth_header(required_permission="upload")
+    if not is_valid:
+        return error_response
+
+    try:
+        # Check if file is in request
+        if "file" not in request.files:
+            return jsonify({"error": "No file provided"}), 400
+
+        file = request.files["file"]
+
+        # Check if file has a filename
+        if file.filename == "":
+            return jsonify({"error": "No file selected"}), 400
+
+        # Validate file extension
+        allowed_extensions = {".csv", ".json"}
+        file_ext = os.path.splitext(file.filename)[1].lower()
+
+        if file_ext not in allowed_extensions:
+            return jsonify(
+                {
+                    "error": f"Invalid file type. Allowed types: {', '.join(allowed_extensions)}"
+                }
+            ), 400
+
+        # Read file content
+        file_content = file.read().decode("utf-8")
+
+        packages_data = []
+
+        # Parse based on file type
+        if file_ext == ".csv":
+            packages_data = parse_csv_content(file_content)
+        elif file_ext == ".json":
+            packages_data = parse_json_content(file_content)
+
+        if not packages_data:
+            return jsonify({"error": "No valid package data found in file"}), 400
+
+        # Validate and create packages
+        created_packages = []
+        errors = []
+
+        for idx, pkg_data in enumerate(packages_data):
+            try:
+                # Validate required fields - check for existence and non-empty values
+                if not pkg_data.get("name") or not pkg_data.get("version"):
+                    errors.append(
+                        f"Row {idx + 1}: Missing required fields (name, version)"
+                    )
+                    continue
+
+                # Create package
+                package_id = str(uuid.uuid4())
+                package = Package(
+                    id=package_id,
+                    name=pkg_data["name"],
+                    version=pkg_data["version"],
+                    uploaded_by=DEFAULT_USERNAME,
+                    upload_timestamp=datetime.now(timezone.utc),
+                    size_bytes=0,
+                    metadata=pkg_data.get("metadata", {}),
+                    s3_key=None,
+                )
+
+                storage.create_package(package)
+                created_packages.append(package.to_dict())
+
+            except Exception as e:
+                errors.append(f"Row {idx + 1}: {str(e)}")
+
+        # Return response
+        if not created_packages and errors:
+            return jsonify({"error": "Failed to import any packages", "details": errors}), 400
+
+        response = {
+            "message": "Packages imported successfully",
+            "imported_count": len(created_packages),
+            "packages": created_packages,
+        }
+
+        if errors:
+            response["warnings"] = errors
+
+        return jsonify(response), 201
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to process file: {str(e)}"}), 500
 
 
 def parse_csv_content(content: str) -> list:
@@ -268,75 +1007,50 @@ def parse_json_content(content: str) -> list:
         raise ValueError(f"Invalid JSON format: {str(e)}")
 
 
-# ================================ ROUTES ====================================
+@app.route("/reset", methods=["DELETE"])
+@app.route("/api/reset", methods=["DELETE"])
+def reset_registry():
+    """Reset the registry to a system default state.
 
-
-@app.route("/", methods=["GET"])
-def index():
-    """Serve the main package listing page or API info.
-
-    Returns:
-        HTML or JSON: Package listing page for browsers, API info for API requests
-    """
-    accept_header = request.headers.get("Accept", "")
-    wants_html = (
-        "text/html" in accept_header
-        and "application/json" not in accept_header
-        and accept_header != "*/*"
-        and accept_header != ""
-    )
-
-    if wants_html:
-        return render_template("index.html")
-    else:
-        return jsonify({"message": "Model Registry API v0.1.0", "status": "ok"}), 200
-
-
-@app.route("/api", methods=["GET"])
-def api_root():
-    """Return basic API information.
-
-    Provides version and status information for the Model Registry API.
+    Per OpenAPI spec: Returns 200 with empty body, 401 for permission denied, 403 for auth failure.
 
     Returns:
-        tuple: JSON response with API metadata and 200 status code
-            - message (str): API version identifier
-            - status (str): API running status
+        tuple: Response and HTTP status code
+            Success (200): Empty response body (no content schema per spec)
+            Error (401): Permission denied (not implemented - would require permission checking)
+            Error (403): Authentication failed due to invalid or missing token
     """
-    return jsonify({"message": "Model Registry API v0.1.0", "status": "ok"}), 200
+    logger.info(f"reset_registry called, packages before reset: {len(storage.packages)}")
 
+    # Check authentication using the shared helper for consistency
+    is_valid, error_response, _ = check_auth_header()
+    if not is_valid:
+        logger.warning("Reset failed: authentication check failed")
+        return error_response
 
-@app.route("/api/health", methods=["GET"])
-def health():
-    """Check the health status of the Model Registry API.
+    # Admin-only operation
+    requester_username = storage.validate_and_use_token(request.headers.get("X-Authorization", "").strip().strip('"').strip("'"))
+    if requester_username:
+        requester = storage.get_user(requester_username)
+        if not requester or not requester.is_admin:
+            logger.warning(f"User {requester_username} attempted reset without admin privileges")
+            return jsonify({"error": "Only administrators can reset the registry"}), 401
 
-    Returns health information including server status, current timestamp,
-    the total number of packages in the registry.
-
-    Returns:
-        tuple: JSON response with health data and 200 status code
-            - timestamp (str): Current UTC timestamp in ISO format
-    """
-    return jsonify(
-        {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-    ), 200
-
-
-@app.route("/api/health/logs", methods=["GET"])
-def health_logs():
-    """Return recent operational log entries."""
     try:
-        limit = int(request.args.get("limit", 100))
-    except ValueError:
-        return jsonify({"error": "Invalid limit parameter"}), 400
+        logger.info("Performing storage reset...")
+        storage.reset()
+        logger.info(f"Storage reset complete. Packages: {len(storage.packages)}, Users: {len(storage.users)}, Tokens: {len(storage.tokens)}")
 
-    limit = max(1, min(limit, 500))
-    level = request.args.get("level")
-
-    entries = storage.get_recent_logs(limit=limit, level=level)
-    return jsonify({"entries": entries}), 200
+        storage.record_event(
+            "registry_reset",
+            actor=requester_username if requester_username else "system",
+            details={"initiator": "api"},
+        )
+        logger.info("Reset complete, returning 200")
+        return Response(status=200)
+    except Exception as e:
+        logger.error(f"Reset failed with exception: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/health/activity", methods=["GET"])
@@ -358,250 +1072,214 @@ def health_activity():
     return jsonify(summary), 200
 
 
-@app.route("/api/packages", methods=["GET", "POST"])
-def packages():
-    """Handle GET and POST requests for packages.
+@app.route("/api/health/logs", methods=["GET"])
+def health_logs():
+    """Return recent operational log entries."""
+    try:
+        limit = int(request.args.get("limit", 100))
+    except ValueError:
+        return jsonify({"error": "Invalid limit parameter"}), 400
 
-    GET: Get packages with optional search and pagination.
-    POST: Create a new package.
-    """
-    if request.method == "GET":
-        return get_packages()
-    else:
-        return create_package()
+    limit = max(1, min(limit, 500))
+    level = request.args.get("level")
+
+    entries = storage.get_recent_logs(limit=limit, level=level)
+    return jsonify({"entries": entries}), 200
 
 
-def get_packages():
-    """Get packages with optional search and pagination.
-
-    Query parameters:
-        offset: Pagination offset (default: 0)
-        limit: Maximum number of packages to return (default: 25)
-        query: Search query string (optional)
-        regex: If 'true', treat query as regex pattern (default: false)
-        version: Filter by version (optional)
-        sort-field: Field to sort by (optional)
-        sort-order: Sort order 'asc' or 'desc' (optional)
+@app.route("/api/tracks", methods=["GET"])
+def get_tracks():
+    """Return the list of tracks the student plans to implement.
 
     Returns:
-        tuple: JSON response with packages, total, offset, limit
+        tuple: JSON response with plannedTracks array and 200 status code
+            - plannedTracks (list): Array of track names the student plans to implement
+        Error (500): System error during retrieval
     """
-    logger.info("get_packages called")
-
-    # Get query parameters
-    offset_str = request.args.get("offset", "0")
-    limit_str = request.args.get("limit", "25")
-    query = request.args.get("query", "").strip()
-    use_regex = request.args.get("regex", "false").lower() == "true"
-    version = request.args.get("version", "").strip()
-    sort_field = request.args.get("sort-field", "").strip()
-    sort_order = request.args.get("sort-order", "").strip()
-
     try:
-        offset = int(offset_str)
-        limit = int(limit_str)
-    except ValueError:
-        return jsonify({"error": "Invalid offset or limit parameter"}), 400
+        return jsonify({
+            "plannedTracks": ["Access control track"]
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-    # Get all packages or search
-    if query:
-        packages = storage.search_packages(query, use_regex=use_regex)
-    else:
-        packages = list(storage.packages.values())
 
-    # Filter by version if specified
-    if version:
-        packages = [pkg for pkg in packages if pkg.version == version]
+@app.route("/authenticate", methods=["PUT"])
+@app.route("/api/authenticate", methods=["PUT"])
+def authenticate():
+    """Authenticate user and return access token.
 
-    # Sort if specified
-    if sort_field:
-        reverse = sort_order.lower() == "desc"
-        try:
-            if sort_field == "name":
-                packages.sort(key=lambda p: p.name.lower(), reverse=reverse)
-            elif sort_field == "version":
-                packages.sort(key=lambda p: p.version, reverse=reverse)
-            elif sort_field == "upload_timestamp":
-                packages.sort(key=lambda p: p.upload_timestamp, reverse=reverse)
-            elif sort_field == "size_bytes":
-                packages.sort(key=lambda p: p.size_bytes, reverse=reverse)
-        except Exception as e:
-            logger.warning(f"Sort failed: {e}")
+    Per OpenAPI spec: Returns AuthenticationToken as JSON string.
+    Request Body: AuthenticationRequest with user and secret.
 
-    total = len(packages)
+    Returns:
+        tuple: (AuthenticationToken JSON string, 200) or error response
+            Success (200): Token as JSON-encoded string
+            Error (400): Missing or malformed request body
+            Error (401): Invalid username or password
+            Error (501): Authentication not supported (not implemented)
+    """
+    logger.info("authenticate endpoint called")
+    try:
+        data = request.get_json()
+        if not data:
+            logger.warning("Auth failed: no request body")
+            return jsonify({"error": "There is missing field(s) in the AuthenticationRequest or it is formed improperly."}), 400
 
-    # Apply pagination
-    paginated_packages = packages[offset : offset + limit]
+        # Extract user and secret per spec
+        user = data.get("user")
+        secret = data.get("secret")
 
-    # Convert to dict format expected by frontend
-    packages_data = []
-    for package in paginated_packages:
-        packages_data.append(
-            {
-                "id": package.id,
-                "name": package.name,
-                "version": package.version,
-                "uploaded_by": package.uploaded_by,
-                "upload_timestamp": package.upload_timestamp.isoformat(),
-                "size_bytes": package.size_bytes,
-                "metadata": package.metadata,
-            }
-        )
+        if not user or not isinstance(user, dict):
+            logger.warning("Auth failed: missing or invalid user field")
+            return jsonify({"error": "There is missing field(s) in the AuthenticationRequest or it is formed improperly."}), 400
 
-    response = {
-        "packages": packages_data,
-        "total": total,
-        "offset": offset,
-        "limit": limit,
+        if not secret or not isinstance(secret, dict):
+            logger.warning("Auth failed: missing or invalid secret field")
+            return jsonify({"error": "There is missing field(s) in the AuthenticationRequest or it is formed improperly."}), 400
+
+        username = user.get("name")
+        password = secret.get("password")
+
+        if not username or not password:
+            logger.warning("Auth failed: missing username or password")
+            return jsonify({"error": "There is missing field(s) in the AuthenticationRequest or it is formed improperly."}), 400
+
+        logger.info(f"Auth attempt for username: {username}")
+
+        # Verify credentials using storage system
+        if not storage.verify_password(username, password):
+            logger.warning(f"Auth failed: invalid credentials for user '{username}'")
+            return jsonify({"error": "The user or password is invalid."}), 401
+
+        # Create token with expiration and usage tracking
+        token_obj = storage.create_token(username)
+
+        logger.info(f"Auth successful for {username}, token created, expires at {token_obj.expires_at}")
+
+        # Return token as JSON string per spec (example shows quoted string)
+        # jsonify() on a string returns the JSON-encoded string
+        return jsonify(token_obj.token), 200
+    except Exception as e:
+        logger.error(f"Auth exception: {str(e)}")
+        return jsonify({"error": "There is missing field(s) in the AuthenticationRequest or it is formed improperly."}), 400
+
+
+# User management endpoints
+@app.route("/user", methods=["POST"])
+@app.route("/api/user", methods=["POST"])
+def register_user():
+    """Register a new user (admin only).
+
+    Request Body: {
+        "username": str,
+        "password": str,
+        "is_admin": bool (optional),
+        "permissions": list[str] (optional, e.g., ["upload", "search", "download"])
     }
 
-    return jsonify(response), 200
-
-
-def create_package():
-    """Create a new package.
-
-    Request body:
-        name: Package name (required)
-        version: Package version (required)
-        content: Package content (optional)
-        metadata: Additional metadata dict (optional)
-
     Returns:
-        tuple: JSON response with package data, 201
+        tuple: (User info JSON, 201) or error response
+            Success (201): User created
+            Error (400): Invalid request body
+            Error (403): Not authorized (not admin or invalid token)
+            Error (409): User already exists
     """
-    logger.info("create_package called")
+    logger.info("register_user endpoint called")
 
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "Request body must be JSON"}), 400
-
-    # Validate required fields
-    name = data.get("name", "").strip()
-    version = data.get("version", "").strip()
-
-    if not name:
-        return jsonify({"error": "Package name is required"}), 400
-    if not version:
-        return jsonify({"error": "Package version is required"}), 400
-
-    # Get optional fields
-    content = data.get("content", "")
-    metadata = data.get("metadata", {})
-    if not isinstance(metadata, dict):
-        return jsonify({"error": "metadata must be a dictionary"}), 400
-
-    # Calculate size_bytes from content
-    size_bytes = len(content.encode("utf-8")) if content else 0
-
-    # Generate package ID
-    package_id = str(uuid.uuid4())
-
-    # Create package
-    package = Package(
-        id=package_id,
-        name=name,
-        version=version,
-        uploaded_by=DEFAULT_USERNAME,
-        upload_timestamp=datetime.now(timezone.utc),
-        size_bytes=size_bytes,
-        metadata=metadata,
-        s3_key=None,
-    )
-
-    # Store package
-    storage.create_package(package)
-
-    logger.info(f"Package created: {package_id} ({name} v{version})")
-
-    # Return package data in format expected by frontend
-    return jsonify({"package": package.to_dict()}), 201
-
-
-@app.route("/packages/<package_id>", methods=["GET"])
-@app.route("/api/packages/<package_id>", methods=["GET"])
-def get_package(package_id):
-    """Retrieve a specific package by ID.
-
-    Fetches detailed information about a package using its unique identifier.
-    Returns JSON for API requests or HTML page for browser requests.
-
-    Args:
-        package_id (str): Unique package identifier (UUID)
-
-    Returns:
-        tuple or HTML: JSON response and HTTP status code, or HTML page
-            Success (200): Package details as dictionary or HTML page
-            Error (404): Package not found
-            Error (500): Server error during retrieval
-    """
-    # Check if this is an API request
-    accept_header = request.headers.get("Accept", "")
-
-    # Return HTML only if explicitly requesting HTML
-    wants_html = (
-        "text/html" in accept_header and "application/json" not in accept_header
-    )
-
-    package = storage.get_package(package_id)
-    if not package:
-        if wants_html:
-            return render_template("404.html"), 404
-        return jsonify({"error": "Package not found"}), 404
-
-    if wants_html:
-        return render_template("package_detail.html", package=package)
-
-    return jsonify(package.to_dict()), 200
-
-
-@app.route("/packages/<package_id>/rate", methods=["GET"])
-@app.route("/api/packages/<package_id>/rate", methods=["GET"])
-def rate_package(package_id):
-    """Calculate and return quality metrics for a package.
-
-    Request body: {github_url: string}
-
-    Returns:
-        tuple: (boolean JSON, 200) or error response
-    """
-    is_valid, error_response = check_auth_header()
+    # Check auth - must be admin
+    is_valid, error_response, username = check_auth_header()
     if not is_valid:
         return error_response
 
-    if not validate_artifact_id(package_id):
-        return jsonify({"error": "Invalid artifact ID format"}), 400
-
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "Request body required"}), 400
-
-    github_url = data.get("github_url", "")
-    if not github_url:
-        return jsonify({"error": "github_url required in request body"}), 400
-
-    package = storage.get_package(package_id)
-    if not package:
-        return jsonify({"error": "Artifact not found"}), 404
+    # Verify user is admin
+    requester = storage.get_user(username)
+    if not requester or not requester.is_admin:
+        logger.warning(f"User {username} attempted to register user without admin privileges")
+        return jsonify({"error": "Only administrators can register users"}), 403
 
     try:
-        url = package.metadata.get("url", "")
-        if not url:
-            return jsonify({"error": "No URL in package metadata"}), 400
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Missing request body"}), 400
 
-        model = Model(model=ModelResource(url=url))
-        results = compute_all_metrics(model)
-        license_metric = results.get("license")
+        new_username = data.get("username")
+        password = data.get("password")
+        is_admin = data.get("is_admin", False)
+        permissions_list = data.get("permissions", [])
 
-        if license_metric:
-            is_compatible = license_metric.value > 0.5
-            return jsonify(is_compatible), 200
-        else:
-            return jsonify(False), 200
+        if not new_username or not password:
+            return jsonify({"error": "Username and password are required"}), 400
+
+        # Validate permissions
+        valid_permissions = {"upload", "search", "download"}
+        permissions = set(permissions_list)
+        if not permissions.issubset(valid_permissions):
+            return jsonify({"error": f"Invalid permissions. Valid: {valid_permissions}"}), 400
+
+        # Create user
+        try:
+            user = storage.create_user(new_username, password, is_admin, permissions)
+            logger.info(f"User {new_username} registered by {username}")
+            return jsonify(user.to_dict()), 201
+        except ValueError as e:
+            logger.warning(f"Failed to create user: {str(e)}")
+            return jsonify({"error": str(e)}), 409
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 502
+        logger.error(f"Error in register_user: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 
+@app.route("/user/<username>", methods=["DELETE"])
+@app.route("/api/user/<username>", methods=["DELETE"])
+def delete_user(username):
+    """Delete a user account.
+
+    Users can delete their own accounts.
+    Administrators can delete any account.
+
+    Args:
+        username: Username to delete
+
+    Returns:
+        tuple: (Success message JSON, 200) or error response
+            Success (200): User deleted
+            Error (403): Not authorized
+            Error (404): User not found
+    """
+    logger.info(f"delete_user endpoint called for username: {username}")
+
+    # Check auth
+    is_valid, error_response, requester_username = check_auth_header()
+    if not is_valid:
+        return error_response
+
+    requester = storage.get_user(requester_username)
+    if not requester:
+        return jsonify({"error": "Requester not found"}), 403
+
+    # Check authorization: user can delete their own account, admins can delete any
+    if username != requester_username and not requester.is_admin:
+        logger.warning(f"User {requester_username} attempted to delete {username} without authorization")
+        return jsonify({"error": "Not authorized to delete this user"}), 403
+
+    # Prevent deletion of the default admin user
+    if username == DEFAULT_USERNAME:
+        logger.warning(f"Attempt to delete default admin user by {requester_username}")
+        return jsonify({"error": "Cannot delete default admin user"}), 403
+
+    # Delete user
+    deleted_user = storage.delete_user(username)
+    if not deleted_user:
+        return jsonify({"error": "User not found"}), 404
+
+    logger.info(f"User {username} deleted by {requester_username}")
+    return jsonify({"message": f"User {username} deleted successfully"}), 200
+
+
+# Artifact endpoints
+@app.route("/artifacts", methods=["POST"])
 @app.route("/api/artifacts", methods=["POST"])
 def list_artifacts():
     """List artifacts matching query criteria.
@@ -613,74 +1291,74 @@ def list_artifacts():
     Returns:
         tuple: (JSON array of ArtifactMetadata, 200) or error response
     """
-    is_valid, error_response = check_auth_header()
+    logger.info(f"list_artifacts called, current package count: {len(storage.packages)}")
+
+    # Check auth with search permission
+    is_valid, error_response, _ = check_auth_header(required_permission="search")
     if not is_valid:
         logger.warning("list_artifacts: auth check failed")
         return error_response
 
+    # Parse request
     queries = request.get_json()
-    logger.info(f"queries: {queries}")
     if not isinstance(queries, list) or len(queries) == 0:
-        return jsonify(
-            {
-                "description": "There is missing field(s) in the artifact_query or it is formed improperly, or is invalid."
-            }
-        ), 400
+        return jsonify({"description": "There is missing field(s) in the artifact_query or it is formed improperly, or is invalid."}), 400
 
+    # Validate each query has required 'name' field per OpenAPI spec
     for idx, query in enumerate(queries):
         if not isinstance(query, dict):
-            return jsonify(
-                {
-                    "description": "There is missing field(s) in the artifact_query or it is formed improperly, or is invalid."
-                }
-            ), 400
+            return jsonify({"description": "There is missing field(s) in the artifact_query or it is formed improperly, or is invalid."}), 400
         if "name" not in query:
-            return jsonify(
-                {
-                    "description": "There is missing field(s) in the artifact_query or it is formed improperly, or is invalid."
-                }
-            ), 400
+            return jsonify({"description": "There is missing field(s) in the artifact_query or it is formed improperly, or is invalid."}), 400
 
+    # Get offset
     offset_str = request.args.get("offset", "0")
     try:
         offset = int(offset_str)
     except ValueError:
         return jsonify({"error": "Invalid offset parameter"}), 400
 
+    # Extract artifact types from queries if specified
+    # Per spec: ArtifactQuery has 'types' (plural, array) not 'type' (singular)
+    # Empty types array means "no filter" (fetch all types), so we keep artifact_types as None
     artifact_types = None
     for query in queries:
         if isinstance(query, dict) and "types" in query:
             query_types = query.get("types")
             if isinstance(query_types, list) and len(query_types) > 0:
+                # Only process non-empty types arrays
                 if artifact_types is None:
                     artifact_types = []
                 for query_type in query_types:
                     if query_type and query_type not in artifact_types:
                         artifact_types.append(query_type)
 
+    # Get matching packages
     try:
         packages, total_count = storage.get_artifacts_by_query(
             queries, artifact_types=artifact_types, offset=offset, limit=100
         )
 
+        # Convert to ArtifactMetadata format
         artifacts = []
         for package in packages:
+            # Infer type from package
             pkg_type = infer_artifact_type(package)
             artifacts.append(package_to_artifact_metadata(package, pkg_type))
 
-        next_offset = (
-            offset + len(packages) if offset + len(packages) < total_count else None
-        )
+        # Calculate next offset
+        next_offset = offset + len(packages) if offset + len(packages) < total_count else None
         offset_header = str(next_offset) if next_offset is not None else ""
 
         response = jsonify(artifacts)
         if offset_header:
             response.headers["offset"] = offset_header
+
+        # Check for too many results
         if len(artifacts) > 100:
             return jsonify({"error": "Too many results"}), 413
-        logger.info(f"artifacts: {artifacts}")
-        return response, 200
 
+        return response, 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -692,24 +1370,25 @@ def get_artifact(artifact_type, artifact_id):
     Returns:
         tuple: (Artifact JSON, 200) or error response
     """
-    logger.info(f"get_artifact called: id={artifact_id} type={artifact_type}")
-
-    is_valid, error_response = check_auth_header()
+    # Check auth
+    is_valid, error_response, _ = check_auth_header()
     if not is_valid:
         return error_response
 
+    # Validate artifact_type and artifact_id
     if not validate_artifact_type(artifact_type):
         return jsonify({"error": f"Invalid artifact type: {artifact_type}"}), 400
 
     if not validate_artifact_id(artifact_id):
         return jsonify({"error": "Invalid artifact ID format"}), 400
 
+    # Retrieve package
     package = storage.get_artifact_by_type_and_id(artifact_type, artifact_id)
     if not package:
         return jsonify({"error": "Artifact not found"}), 404
 
+    # Convert to Artifact format
     artifact = package_to_artifact(package, artifact_type)
-    logger.info(f"returning: artifact={artifact}")
     return jsonify(artifact), 200
 
 
@@ -722,78 +1401,54 @@ def update_artifact(artifact_type, artifact_id):
     Returns:
         tuple: (200) or error response
     """
-    is_valid, error_response = check_auth_header()
+    # Check auth
+    is_valid, error_response, _ = check_auth_header()
     if not is_valid:
         return error_response
 
+    # Validate params
     if not validate_artifact_type(artifact_type):
         return jsonify({"error": f"Invalid artifact type: {artifact_type}"}), 400
+
     if not validate_artifact_id(artifact_id):
         return jsonify({"error": "Invalid artifact ID format"}), 400
 
+    # Parse request body
     data = request.get_json()
     if not data:
         return jsonify({"error": "Request body required"}), 400
 
+    # Validate metadata matches path params
     metadata = data.get("metadata", {})
     if metadata.get("id") != artifact_id:
-        return jsonify(
-            {"error": "Artifact ID in body does not match path parameter"}
-        ), 400
+        return jsonify({"error": "Artifact ID in body does not match path parameter"}), 400
 
     if metadata.get("name") and metadata.get("name") != artifact_id:
+        # Name doesn't have to match, but if provided should be consistent
         pass
 
     if metadata.get("type") != artifact_type:
-        return jsonify(
-            {"error": "Artifact type in body does not match path parameter"}
-        ), 400
+        return jsonify({"error": "Artifact type in body does not match path parameter"}), 400
 
+    # Retrieve existing package
     package = storage.get_artifact_by_type_and_id(artifact_type, artifact_id)
     if not package:
         return jsonify({"error": "Artifact not found"}), 404
 
+    # Update package metadata with new data
     artifact_data = data.get("data", {})
     if "url" in artifact_data:
         package.metadata["url"] = artifact_data["url"]
     if "download_url" in artifact_data:
         package.metadata["download_url"] = artifact_data["download_url"]
 
+    # Update name if provided
     if "name" in metadata:
         package.name = metadata["name"]
 
+    # Store updated package
     storage.create_package(package)
-    return jsonify({}), 200
 
-
-@app.route("/api/artifacts/<artifact_type>/<artifact_id>", methods=["DELETE"])
-def delete_artifact(artifact_type, artifact_id):
-    """Delete an artifact from the registry.
-
-    Uses only path parameters (artifact_type and artifact_id) to identify and delete the artifact.
-    No request body is required.
-
-    Args:
-        artifact_type: Type of artifact (model, dataset, or code)
-        artifact_id: Unique identifier for the artifact
-
-    Returns:
-        tuple: (200) on success, or error response (400/403/404)
-    """
-    is_valid, error_response = check_auth_header()
-    if not is_valid:
-        return error_response
-
-    if not validate_artifact_type(artifact_type):
-        return jsonify({"error": f"Invalid artifact type: {artifact_type}"}), 400
-    if not validate_artifact_id(artifact_id):
-        return jsonify({"error": "Invalid artifact ID format"}), 400
-
-    package = storage.get_artifact_by_type_and_id(artifact_type, artifact_id)
-    if not package:
-        return jsonify({"error": "Artifact not found"}), 404
-
-    storage.delete_package(package.id)
     return jsonify({}), 200
 
 
@@ -804,20 +1459,21 @@ def create_artifact(artifact_type):
     Returns:
         tuple: (Artifact JSON, 201/202/424) or error response
     """
-    is_valid, error_response = check_auth_header()
+    # Check auth with upload permission
+    is_valid, error_response, _ = check_auth_header(required_permission="upload")
     if not is_valid:
         return error_response
 
+    # Validate artifact_type
     if not validate_artifact_type(artifact_type):
         return jsonify({"error": f"Invalid artifact type: {artifact_type}"}), 400
 
+    # Parse request body
     data = request.get_json()
     if not data or "url" not in data:
         return jsonify({"error": "URL required in request body"}), 400
-    logger.info(f"artifact data: {data}")
 
     url = data["url"]
-    artifact_name = data["name"]
 
     # Check if artifact already exists (by URL)
     for package in storage.packages.values():
@@ -837,8 +1493,9 @@ def create_artifact(artifact_type):
     net_score.evaluate(list(results.values()))
     results[net_score.name] = net_score
 
-    # Extract artifact name from URL
+    # Extract name from URL
     parts = url.rstrip("/").split("/")
+    model_name = parts[-1] if parts else "unknown"
 
     # Store scores
     scores = {}
@@ -849,7 +1506,7 @@ def create_artifact(artifact_type):
     package_id = str(uuid.uuid4())
     package = Package(
         id=package_id,
-        name=artifact_name,
+        name=model_name,
         version="1.0.0",
         uploaded_by=DEFAULT_USERNAME,
         upload_timestamp=datetime.now(timezone.utc),
@@ -879,13 +1536,16 @@ def get_model_rating(artifact_id):
     Returns:
         tuple: (ModelRating JSON, 200) or error response
     """
-    is_valid, error_response = check_auth_header()
+    # Check auth
+    is_valid, error_response, _ = check_auth_header()
     if not is_valid:
         return error_response
 
+    # Validate artifact_id
     if not validate_artifact_id(artifact_id):
         return jsonify({"error": "Invalid artifact ID format"}), 400
 
+    # Retrieve package
     package = storage.get_package(artifact_id)
     if not package:
         return jsonify({"error": "Artifact not found"}), 404
@@ -915,58 +1575,30 @@ def get_model_rating(artifact_id):
             return jsonify({"error": str(e)}), 500
 
     # Convert to ModelRating format
+    # Helper function to extract score and latency
     def get_metric_value(metric_name: str) -> tuple[float, float]:
         """Extract metric value and latency in seconds."""
         metric_data = scores.get(metric_name, {})
         score = metric_data.get("score", 0.0)
         latency_ms = metric_data.get("latency_ms", 0.0)
-
-        # Ensure score is a valid float (handle None, preserve negative values like -1.0 for reviewedness)
-        if score is None:
-            score = 0.0
-        else:
-            try:
-                score = float(score)
-                # Preserve negative values (e.g., -1.0 for reviewedness on error)
-                # Don't clamp to 0.0 as some metrics use -1.0 to indicate computation failure
-            except (TypeError, ValueError):
-                score = 0.0
-
-        # Ensure latency is a valid float
-        if latency_ms is None:
-            latency_ms = 0.0
-        else:
-            try:
-                latency_ms = float(latency_ms)
-                if latency_ms < 0.0:
-                    latency_ms = 0.0
-            except (TypeError, ValueError):
-                latency_ms = 0.0
-
-        latency_seconds = latency_ms / 1000.0
+        latency_seconds = latency_ms / 1000.0  # Convert ms to seconds
         return score, latency_seconds
 
     # Extract all metric values and latencies
     net_score_val, net_score_latency = get_metric_value("net_score")
     ramp_up_time_val, ramp_up_time_latency = get_metric_value("ramp_up_time")
     bus_factor_val, bus_factor_latency = get_metric_value("bus_factor")
-    performance_claims_val, performance_claims_latency = get_metric_value(
-        "performance_claims"
-    )
+    performance_claims_val, performance_claims_latency = get_metric_value("performance_claims")
     license_val, license_latency = get_metric_value("license")
-    dataset_and_code_score_val, dataset_and_code_score_latency = get_metric_value(
-        "dataset_and_code_score"
-    )
+    dataset_and_code_score_val, dataset_and_code_score_latency = get_metric_value("dataset_and_code_score")
     dataset_quality_val, dataset_quality_latency = get_metric_value("dataset_quality")
     code_quality_val, code_quality_latency = get_metric_value("code_quality")
     size_score_val, size_score_latency = get_metric_value("size_score")
-    reviewedness_val, reviewedness_latency = get_metric_value("reviewedness")
 
     # Handle size_score - must be a dict with device scores
     size_score_obj = size_score_val if isinstance(size_score_val, dict) else {}
     if not isinstance(size_score_obj, dict) or not all(
-        key in size_score_obj
-        for key in ["raspberry_pi", "jetson_nano", "desktop_pc", "aws_server"]
+        key in size_score_obj for key in ["raspberry_pi", "jetson_nano", "desktop_pc", "aws_server"]
     ):
         size_score_obj = {
             "raspberry_pi": 1.0,
@@ -975,9 +1607,11 @@ def get_model_rating(artifact_id):
             "aws_server": 1.0,
         }
 
-    # Missing metrics default to 0.0 (not implemented yet)
+    # Missing metrics default to 0.0 (reproducibility, reviewedness, tree_score)
     reproducibility_val = 0.0
     reproducibility_latency = 0.0
+    reviewedness_val = 0.0
+    reviewedness_latency = 0.0
     tree_score_val = 0.0
     tree_score_latency = 0.0
 
@@ -1014,181 +1648,6 @@ def get_model_rating(artifact_id):
     return jsonify(rating), 200
 
 
-def get_artifact_dependencies(artifact_type: str, artifact_id: str) -> list[Package]:
-    """Get all dependency packages for an artifact.
-
-    For models, uses lineage information. For other types, returns empty list.
-
-    Args:
-        artifact_type: Type of artifact
-        artifact_id: ID of artifact
-
-    Returns:
-        List of dependency packages
-    """
-    if artifact_type != "model":
-        # Lineage/dependencies only available for models
-        return []
-
-    package = storage.get_package(artifact_id)
-    if not package:
-        return []
-
-    url = package.metadata.get("url", "")
-    if not url:
-        return []
-
-    dependencies = []
-
-    try:
-        model = Model(model=ModelResource(url=url))
-
-        # Try to read config.json to extract lineage information
-        try:
-            with model.model.open_files(allow_patterns=["config.json"]) as repo:
-                if repo.exists("config.json"):
-                    config = repo.read_json("config.json")
-
-                    # Extract base model information
-                    base_model_path = None
-                    if "_name_or_path" in config:
-                        base_model_path = config["_name_or_path"]
-                    elif "base_model" in config:
-                        base_model_path = config["base_model"]
-
-                    # Search for base model in storage
-                    if base_model_path:
-                        base_model_id = base_model_path
-                        if "huggingface.co" in base_model_path.lower():
-                            parsed = urlparse(base_model_path)
-                            path_parts = [
-                                x for x in parsed.path.strip("/").split("/") if x
-                            ]
-                            if len(path_parts) >= 2:
-                                base_model_id = f"{path_parts[0]}/{path_parts[1]}"
-                            elif len(path_parts) == 1:
-                                base_model_id = path_parts[0]
-                        elif "/" in base_model_path:
-                            base_model_id = base_model_path
-                        else:
-                            base_model_id = base_model_path
-
-                        found_parent = None
-                        all_packages = storage.list_packages(offset=0, limit=10000)
-                        for pkg in all_packages:
-                            if pkg.id == artifact_id:
-                                continue  # Skip self
-
-                            pkg_url = pkg.metadata.get("url", "")
-                            pkg_name = pkg.name.lower()
-
-                            pkg_model_id = None
-                            if pkg_url and "huggingface.co" in pkg_url.lower():
-                                parsed = urlparse(pkg_url)
-                                path_parts = [
-                                    x for x in parsed.path.strip("/").split("/") if x
-                                ]
-                                if len(path_parts) >= 2:
-                                    pkg_model_id = f"{path_parts[0]}/{path_parts[1]}"
-                                elif len(path_parts) == 1:
-                                    pkg_model_id = path_parts[0]
-
-                            if (
-                                pkg_model_id
-                                and base_model_id.lower() == pkg_model_id.lower()
-                            ):
-                                found_parent = pkg
-                                break
-
-                            if (
-                                "/" not in base_model_id
-                                and pkg_name
-                                and base_model_id.lower() == pkg_name
-                            ):
-                                found_parent = pkg
-                                break
-
-                            base_model_name = (
-                                base_model_id.split("/")[-1].lower()
-                                if "/" in base_model_id
-                                else base_model_id.lower()
-                            )
-                            if (
-                                pkg_url
-                                and base_model_name in pkg_url.lower()
-                                and "huggingface.co" in pkg_url.lower()
-                            ):
-                                if base_model_name in pkg_url.lower().split("/")[-1]:
-                                    found_parent = pkg
-                                    break
-
-                        if found_parent:
-                            dependencies.append(found_parent)
-
-                    # Check for dataset information in config
-                    dataset_name = None
-                    if "dataset" in config:
-                        dataset_name = config["dataset"]
-                    elif "train_dataset" in config:
-                        dataset_name = config["train_dataset"]
-
-                    if dataset_name:
-                        dataset_id = dataset_name
-                        if "huggingface.co" in dataset_name.lower():
-                            parsed = urlparse(dataset_name)
-                            path_parts = [
-                                x for x in parsed.path.strip("/").split("/") if x
-                            ]
-                            if path_parts and path_parts[0] == "datasets":
-                                path_parts = path_parts[1:]
-                            if len(path_parts) >= 2:
-                                dataset_id = f"{path_parts[0]}/{path_parts[1]}"
-                            elif len(path_parts) == 1:
-                                dataset_id = path_parts[0]
-
-                        all_packages = storage.list_packages(offset=0, limit=10000)
-                        for pkg in all_packages:
-                            if pkg.id == artifact_id:
-                                continue  # Skip self
-
-                            pkg_url = pkg.metadata.get("url", "")
-                            pkg_name = pkg.name.lower()
-
-                            if "huggingface.co/datasets/" in pkg_url.lower():
-                                parsed = urlparse(pkg_url)
-                                path_parts = [
-                                    x for x in parsed.path.strip("/").split("/") if x
-                                ]
-                                if path_parts and path_parts[0] == "datasets":
-                                    path_parts = path_parts[1:]
-                                pkg_dataset_id = None
-                                if len(path_parts) >= 2:
-                                    pkg_dataset_id = f"{path_parts[0]}/{path_parts[1]}"
-                                elif len(path_parts) == 1:
-                                    pkg_dataset_id = path_parts[0]
-
-                                dataset_id_lower = dataset_id.lower()
-                                if (
-                                    pkg_dataset_id
-                                    and dataset_id_lower == pkg_dataset_id.lower()
-                                ):
-                                    dependencies.append(pkg)
-                                    break
-
-                                if (
-                                    "/" not in dataset_id
-                                    and dataset_id_lower == pkg_name
-                                ):
-                                    dependencies.append(pkg)
-                                    break
-        except Exception as e:
-            logger.warning(f"Could not read config.json for dependencies: {str(e)}")
-    except Exception as e:
-        logger.warning(f"Error getting dependencies: {str(e)}")
-
-    return dependencies
-
-
 @app.route("/api/artifact/<artifact_type>/<artifact_id>/cost", methods=["GET"])
 def get_artifact_cost(artifact_type, artifact_id):
     """Get artifact cost in MB.
@@ -1197,70 +1656,37 @@ def get_artifact_cost(artifact_type, artifact_id):
 
     Returns:
         tuple: (ArtifactCost JSON, 200) or error response
-        Format when dependency=false: {"artifact_id": {"total_cost": value}}
-        Format when dependency=true: {"artifact_id": {"standalone_cost": value, "total_cost": value}, ...}
     """
-    is_valid, error_response = check_auth_header()
+    # Check auth
+    is_valid, error_response, _ = check_auth_header()
     if not is_valid:
         return error_response
 
+    # Validate params
     if not validate_artifact_type(artifact_type):
         return jsonify({"error": f"Invalid artifact type: {artifact_type}"}), 400
 
     if not validate_artifact_id(artifact_id):
         return jsonify({"error": "Invalid artifact ID format"}), 400
 
-    try:
-        package = storage.get_artifact_by_type_and_id(artifact_type, artifact_id)
-        if not package:
-            return jsonify({"error": "Artifact not found"}), 404
+    # Retrieve package
+    package = storage.get_artifact_by_type_and_id(artifact_type, artifact_id)
+    if not package:
+        return jsonify({"error": "Artifact not found"}), 404
 
-        dependency = request.args.get("dependency", "false").lower() == "true"
+    # Calculate size in MB
+    size_bytes = package.size_bytes
+    size_mb = size_bytes / (1024 * 1024) if size_bytes > 0 else 0.0
 
-        # Calculate cost in MB (size_bytes / (1024 * 1024))
-        def calculate_cost_mb(size_bytes: int) -> float:
-            """Convert size in bytes to cost in MB."""
-            return round(size_bytes / (1024 * 1024), 2) if size_bytes > 0 else 0.0
+    # Get dependency query param
+    dependency = request.args.get("dependency", "false").lower() == "true"
 
-        standalone_cost = calculate_cost_mb(package.size_bytes)
+    cost = {
+        "size_mb": round(size_mb, 2),
+        "dependency": dependency,
+    }
 
-        if not dependency:
-            # Return only total_cost for the artifact itself
-            return jsonify({artifact_id: {"total_cost": standalone_cost}}), 200
-
-        # When dependency=true, include all dependencies
-        dependencies = get_artifact_dependencies(artifact_type, artifact_id)
-
-        # Build cost map for all artifacts (self + dependencies)
-        cost_map = {}
-
-        # Add self
-        total_cost = standalone_cost
-        for dep in dependencies:
-            dep_cost = calculate_cost_mb(dep.size_bytes)
-            total_cost += dep_cost
-
-        cost_map[artifact_id] = {
-            "standalone_cost": standalone_cost,
-            "total_cost": round(total_cost, 2),
-        }
-
-        # Add dependencies
-        for dep in dependencies:
-            dep_standalone = calculate_cost_mb(dep.size_bytes)
-            # For dependencies, total_cost is just their standalone cost
-            # (they don't include their own dependencies in this calculation)
-            cost_map[dep.id] = {
-                "standalone_cost": dep_standalone,
-                "total_cost": dep_standalone,
-            }
-
-        return jsonify(cost_map), 200
-    except Exception as e:
-        logger.error(f"Error calculating artifact cost: {str(e)}")
-        return jsonify(
-            {"error": "The artifact cost calculator encountered an error."}
-        ), 500
+    return jsonify(cost), 200
 
 
 @app.route("/api/artifact/model/<artifact_id>/lineage", methods=["GET"])
@@ -1273,13 +1699,16 @@ def get_artifact_lineage(artifact_id):
     Returns:
         tuple: (ArtifactLineageGraph JSON, 200) or error response
     """
-    is_valid, error_response = check_auth_header()
+    # Check auth
+    is_valid, error_response, _ = check_auth_header()
     if not is_valid:
         return error_response
 
+    # Validate artifact_id
     if not validate_artifact_id(artifact_id):
         return jsonify({"error": "Invalid artifact ID format"}), 400
 
+    # Retrieve package
     package = storage.get_package(artifact_id)
     if not package:
         return jsonify({"error": "Artifact not found"}), 404
@@ -1289,6 +1718,7 @@ def get_artifact_lineage(artifact_id):
         return jsonify({"error": "No URL in package metadata"}), 400
 
     try:
+        # Build lineage graph from config.json
         model = Model(model=ModelResource(url=url))
         nodes = []
         edges = []
@@ -1297,7 +1727,7 @@ def get_artifact_lineage(artifact_id):
         current_node = {
             "artifact_id": artifact_id,
             "name": package.name,
-            "source": "config_json",
+            "source": "config_json"
         }
         nodes.append(current_node)
 
@@ -1308,6 +1738,7 @@ def get_artifact_lineage(artifact_id):
                     config = repo.read_json("config.json")
 
                     # Extract base model information
+                    # Common fields: _name_or_path, base_model, model_type, architectures
                     base_model_path = None
                     if "_name_or_path" in config:
                         base_model_path = config["_name_or_path"]
@@ -1316,99 +1747,98 @@ def get_artifact_lineage(artifact_id):
 
                     # Search for base model in storage
                     if base_model_path:
+                        # Extract model identifier from base_model_path
+                        # It could be a full URL or just a model name/org/model
                         base_model_id = base_model_path
                         if "huggingface.co" in base_model_path.lower():
+                            # Extract model ID from URL (e.g., "https://huggingface.co/google/bert-base-uncased" -> "google/bert-base-uncased" or "bert-base-uncased")
                             parsed = urlparse(base_model_path)
-                            path_parts = [
-                                x for x in parsed.path.strip("/").split("/") if x
-                            ]
+                            path_parts = [x for x in parsed.path.strip("/").split("/") if x]
                             if len(path_parts) >= 2:
                                 base_model_id = f"{path_parts[0]}/{path_parts[1]}"
                             elif len(path_parts) == 1:
                                 base_model_id = path_parts[0]
                         elif "/" in base_model_path:
+                            # Already in org/model format
                             base_model_id = base_model_path
                         else:
+                            # Just model name
                             base_model_id = base_model_path
 
+                        # Try to find matching model in storage
                         found_parent = None
+
+                        # Search all packages for matching URL or name
+                        # Get all packages (use large limit to get all)
                         all_packages = storage.list_packages(offset=0, limit=10000)
                         for pkg in all_packages:
                             pkg_url = pkg.metadata.get("url", "")
                             pkg_name = pkg.name.lower()
 
+                            # Extract model ID from package URL for comparison
                             pkg_model_id = None
                             if pkg_url and "huggingface.co" in pkg_url.lower():
                                 parsed = urlparse(pkg_url)
-                                path_parts = [
-                                    x for x in parsed.path.strip("/").split("/") if x
-                                ]
+                                path_parts = [x for x in parsed.path.strip("/").split("/") if x]
                                 if len(path_parts) >= 2:
                                     pkg_model_id = f"{path_parts[0]}/{path_parts[1]}"
                                 elif len(path_parts) == 1:
                                     pkg_model_id = path_parts[0]
 
-                            if (
-                                pkg_model_id
-                                and base_model_id.lower() == pkg_model_id.lower()
-                            ):
+                            # Match by extracted model ID (exact match)
+                            if pkg_model_id and base_model_id.lower() == pkg_model_id.lower():
                                 found_parent = pkg
                                 break
 
-                            if (
-                                "/" not in base_model_id
-                                and pkg_name
-                                and base_model_id.lower() == pkg_name
-                            ):
+                            # Match by model name only (if base_model_id is just a name)
+                            if "/" not in base_model_id and pkg_name and base_model_id.lower() == pkg_name:
                                 found_parent = pkg
                                 break
 
-                            base_model_name = (
-                                base_model_id.split("/")[-1].lower()
-                                if "/" in base_model_id
-                                else base_model_id.lower()
-                            )
-                            if (
-                                pkg_url
-                                and base_model_name in pkg_url.lower()
-                                and "huggingface.co" in pkg_url.lower()
-                            ):
+                            # Fallback: match if base model name is in package URL (for partial matches)
+                            base_model_name = base_model_id.split("/")[-1].lower() if "/" in base_model_id else base_model_id.lower()
+                            if pkg_url and base_model_name in pkg_url.lower() and "huggingface.co" in pkg_url.lower():
+                                # Additional check: make sure it's not a false positive
                                 if base_model_name in pkg_url.lower().split("/")[-1]:
                                     found_parent = pkg
                                     break
 
                         if found_parent:
+                            # Add parent model as node
                             parent_node = {
                                 "artifact_id": found_parent.id,
                                 "name": found_parent.name,
-                                "source": "config_json",
+                                "source": "config_json"
                             }
-                            if not any(
-                                n["artifact_id"] == found_parent.id for n in nodes
-                            ):
+                            # Avoid duplicate nodes
+                            if not any(n["artifact_id"] == found_parent.id for n in nodes):
                                 nodes.append(parent_node)
 
+                            # Add edge from parent to current model
                             edge = {
                                 "from_node_artifact_id": found_parent.id,
                                 "to_node_artifact_id": artifact_id,
-                                "relationship": "base_model",
+                                "relationship": "base_model"
                             }
                             edges.append(edge)
 
                     # Check for dataset information in config
+                    # Some models mention datasets in config.json
                     dataset_name = None
                     if "dataset" in config:
                         dataset_name = config["dataset"]
                     elif "train_dataset" in config:
                         dataset_name = config["train_dataset"]
 
+                    # Search for dataset in storage
                     if dataset_name:
+                        # Extract dataset identifier (could be a name or URL)
                         dataset_id = dataset_name
                         if "huggingface.co" in dataset_name.lower():
+                            # Extract dataset ID from URL
                             parsed = urlparse(dataset_name)
-                            path_parts = [
-                                x for x in parsed.path.strip("/").split("/") if x
-                            ]
+                            path_parts = [x for x in parsed.path.strip("/").split("/") if x]
+                            # Skip "datasets" part if present
                             if path_parts and path_parts[0] == "datasets":
                                 path_parts = path_parts[1:]
                             if len(path_parts) >= 2:
@@ -1421,11 +1851,12 @@ def get_artifact_lineage(artifact_id):
                             pkg_url = pkg.metadata.get("url", "")
                             pkg_name = pkg.name.lower()
 
+                            # Check if it's a dataset (URL contains /datasets/)
                             if "huggingface.co/datasets/" in pkg_url.lower():
+                                # Extract dataset ID from package URL
                                 parsed = urlparse(pkg_url)
-                                path_parts = [
-                                    x for x in parsed.path.strip("/").split("/") if x
-                                ]
+                                path_parts = [x for x in parsed.path.strip("/").split("/") if x]
+                                # Skip "datasets" part
                                 if path_parts and path_parts[0] == "datasets":
                                     path_parts = path_parts[1:]
                                 pkg_dataset_id = None
@@ -1434,55 +1865,58 @@ def get_artifact_lineage(artifact_id):
                                 elif len(path_parts) == 1:
                                     pkg_dataset_id = path_parts[0]
 
+                                # Match by extracted dataset ID (exact match preferred)
                                 dataset_id_lower = dataset_id.lower()
-                                if (
-                                    pkg_dataset_id
-                                    and dataset_id_lower == pkg_dataset_id.lower()
-                                ):
+                                if pkg_dataset_id and dataset_id_lower == pkg_dataset_id.lower():
+                                    # Add dataset as node
                                     dataset_node = {
                                         "artifact_id": pkg.id,
                                         "name": pkg.name,
-                                        "source": "upstream_dataset",
+                                        "source": "upstream_dataset"
                                     }
-                                    if not any(
-                                        n["artifact_id"] == pkg.id for n in nodes
-                                    ):
+                                    # Avoid duplicate nodes
+                                    if not any(n["artifact_id"] == pkg.id for n in nodes):
                                         nodes.append(dataset_node)
 
+                                    # Add edge from dataset to current model
                                     edge = {
                                         "from_node_artifact_id": pkg.id,
                                         "to_node_artifact_id": artifact_id,
-                                        "relationship": "fine_tuning_dataset",
+                                        "relationship": "fine_tuning_dataset"
                                     }
                                     edges.append(edge)
                                     break
 
-                                if (
-                                    "/" not in dataset_id
-                                    and dataset_id_lower == pkg_name
-                                ):
+                                # Fallback: match by name if dataset_id is just a name
+                                if "/" not in dataset_id and dataset_id_lower == pkg_name:
+                                    # Add dataset as node
                                     dataset_node = {
                                         "artifact_id": pkg.id,
                                         "name": pkg.name,
-                                        "source": "upstream_dataset",
+                                        "source": "upstream_dataset"
                                     }
-                                    if not any(
-                                        n["artifact_id"] == pkg.id for n in nodes
-                                    ):
+                                    # Avoid duplicate nodes
+                                    if not any(n["artifact_id"] == pkg.id for n in nodes):
                                         nodes.append(dataset_node)
 
+                                    # Add edge from dataset to current model
                                     edge = {
                                         "from_node_artifact_id": pkg.id,
                                         "to_node_artifact_id": artifact_id,
-                                        "relationship": "fine_tuning_dataset",
+                                        "relationship": "fine_tuning_dataset"
                                     }
                                     edges.append(edge)
                                     break
 
         except Exception as e:
+            # If config.json can't be read, return graph with just current node
             logger.warning(f"Could not read config.json for lineage: {str(e)}")
 
-        lineage = {"nodes": nodes, "edges": edges}
+        # Build lineage graph response
+        lineage = {
+            "nodes": nodes,
+            "edges": edges
+        }
 
         return jsonify(lineage), 200
 
@@ -1500,13 +1934,16 @@ def check_artifact_license(artifact_id):
     Returns:
         tuple: (boolean JSON, 200) or error response
     """
-    is_valid, error_response = check_auth_header()
+    # Check auth
+    is_valid, error_response, _ = check_auth_header()
     if not is_valid:
         return error_response
 
+    # Validate artifact_id
     if not validate_artifact_id(artifact_id):
         return jsonify({"error": "Invalid artifact ID format"}), 400
 
+    # Parse request body
     data = request.get_json()
     if not data:
         return jsonify({"error": "Request body required"}), 400
@@ -1515,10 +1952,12 @@ def check_artifact_license(artifact_id):
     if not github_url:
         return jsonify({"error": "github_url required in request body"}), 400
 
+    # Retrieve package
     package = storage.get_package(artifact_id)
     if not package:
         return jsonify({"error": "Artifact not found"}), 404
 
+    # Check license compatibility using existing license metric
     try:
         url = package.metadata.get("url", "")
         if not url:
@@ -1529,60 +1968,13 @@ def check_artifact_license(artifact_id):
         license_metric = results.get("license")
 
         if license_metric:
+            # License is compatible if score > 0.5
             is_compatible = license_metric.value > 0.5
             return jsonify(is_compatible), 200
         else:
             return jsonify(False), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 502
-
-
-@app.route("/api/artifact/byName/<artifact_name>", methods=["GET"])
-def get_artifacts_by_name(artifact_name):
-    """Get artifact metadata entries by name.
-
-    Per OpenAPI spec: Returns metadata for each artifact matching the provided name.
-
-    Args:
-        artifact_name: Name of artifacts to find
-
-    Returns:
-        tuple: (Array of ArtifactMetadata JSON, 200) or error response
-            - 200: Array of ArtifactMetadata objects
-            - 400: Invalid artifact name
-            - 403: Authentication failed
-            - 404: No artifacts found with this name
-    """
-    logger.info(f"get_artifacts_by_name called with name: {artifact_name}")
-
-    is_valid, error_response = check_auth_header()
-    if not is_valid:
-        logger.warning("get_artifacts_by_name: auth check failed")
-        return error_response
-
-    if not artifact_name or not artifact_name.strip():
-        return jsonify(
-            {
-                "description": "There is missing field(s) in the artifact_name or it is formed improperly, or is invalid."
-            }
-        ), 400
-
-    matching_packages = []
-    for package in storage.packages.values():
-        if package.name == artifact_name:
-            matching_packages.append(package)
-
-    if not matching_packages:
-        logger.info(f"No artifacts found with name: {artifact_name}")
-        return jsonify({"error": "No such artifact."}), 404
-
-    artifacts = []
-    for package in matching_packages:
-        artifact_metadata = package_to_artifact_metadata(package)
-        artifacts.append(artifact_metadata)
-
-    logger.info(f"Found {len(artifacts)} artifacts with name: {artifact_name}")
-    return jsonify(artifacts), 200
 
 
 @app.route("/api/artifact/byRegEx", methods=["POST"])
@@ -1594,10 +1986,12 @@ def search_artifacts_by_regex():
     Returns:
         tuple: (Array of ArtifactMetadata, 200) or error response
     """
-    is_valid, error_response = check_auth_header()
+    # Check auth
+    is_valid, error_response, _ = check_auth_header()
     if not is_valid:
         return error_response
 
+    # Parse request body
     data = request.get_json()
     if not data:
         return jsonify({"error": "Request body required"}), 400
@@ -1609,379 +2003,21 @@ def search_artifacts_by_regex():
 
     logger.info(f"byRegEx endpoint called with regex pattern: {regex_pattern}")
 
+    # Search packages using regex
     try:
         packages = storage.search_packages(regex_pattern, use_regex=True)
 
+        # Convert to ArtifactMetadata array
         artifacts = []
         for package in packages:
             pkg_type = infer_artifact_type(package)
             artifacts.append(package_to_artifact_metadata(package, pkg_type))
 
-        if len(artifacts) == 0:
-            logger.info(
-                f"byRegEx search found no artifacts matching pattern: {regex_pattern}"
-            )
-            return jsonify({"error": "No artifact found under this regex."}), 404
-
-        logger.info(
-            f"byRegEx search completed successfully: {len(artifacts)} artifacts found"
-        )
+        logger.info(f"byRegEx search completed successfully: {len(artifacts)} artifacts found")
         return jsonify(artifacts), 200
     except Exception as e:
-        logger.error(
-            f"byRegEx search failed with exception: {str(e)}, pattern: {regex_pattern}"
-        )
+        logger.error(f"byRegEx search failed with exception: {str(e)}, pattern: {regex_pattern}")
         return jsonify({"error": str(e)}), 400
-
-
-@app.route("/api/authenticate", methods=["PUT"])
-def authenticate():
-    """Authenticate user and return access token.
-
-    Per OpenAPI spec: Returns AuthenticationToken as JSON string.
-    Request Body: AuthenticationRequest with user and secret.
-
-    Returns:
-        tuple: (AuthenticationToken JSON string, 200) or error response
-            Success (200): Token as JSON-encoded string
-            Error (400): Missing or malformed request body
-            Error (401): Invalid username or password
-            Error (501): Authentication not supported (not implemented)
-    """
-    logger.info("authenticate endpoint called")
-    try:
-        data = request.get_json()
-        if not data:
-            logger.warning("Auth failed: no request body")
-            return jsonify(
-                {
-                    "error": "There is missing field(s) in the AuthenticationRequest or it is formed improperly."
-                }
-            ), 400
-
-        user = data.get("user")
-        secret = data.get("secret")
-
-        if not user or not isinstance(user, dict):
-            logger.warning("Auth failed: missing or invalid user field")
-            return jsonify(
-                {
-                    "error": "There is missing field(s) in the AuthenticationRequest or it is formed improperly."
-                }
-            ), 400
-
-        if not secret or not isinstance(secret, dict):
-            logger.warning("Auth failed: missing or invalid secret field")
-            return jsonify(
-                {
-                    "error": "There is missing field(s) in the AuthenticationRequest or it is formed improperly."
-                }
-            ), 400
-
-        username = user.get("name")
-        password = secret.get("password")
-
-        if not username or not password:
-            logger.warning("Auth failed: missing username or password")
-            return jsonify(
-                {
-                    "error": "There is missing field(s) in the AuthenticationRequest or it is formed improperly."
-                }
-            ), 400
-
-        logger.info(
-            f"Auth attempt for username: {username}, password length: {len(password)}"
-        )
-
-        username_valid = username == DEFAULT_USERNAME
-        password_valid = password == DEFAULT_PASSWORD
-
-        logger.info(
-            f"Auth validation: username_valid={username_valid}, password_valid={password_valid}"
-        )
-
-        if not username_valid or not password_valid:
-            logger.warning(f"Auth failed: invalid credentials for user '{username}'")
-            return jsonify({"error": "The user or password is invalid."}), 401
-
-        token = f"bearer {str(uuid.uuid4())}"
-        _valid_tokens.add(token)
-
-        logger.info(
-            f"Auth successful, token generated, valid_tokens count: {len(_valid_tokens)}"
-        )
-
-        return jsonify(token), 200
-    except Exception as e:
-        logger.error(f"Auth exception: {str(e)}")
-        return jsonify(
-            {
-                "error": "There is missing field(s) in the AuthenticationRequest or it is formed improperly."
-            }
-        ), 400
-
-
-@app.route("/api/reset", methods=["DELETE"])
-def reset_registry():
-    """Reset the registry to a system default state.
-
-    Per OpenAPI spec: Returns 200 with empty body, 401 for permission denied, 403 for auth failure.
-
-    Returns:
-        tuple: Response and HTTP status code
-            Success (200): Empty response body (no content schema per spec)
-            Error (401): Permission denied (not implemented - would require permission checking)
-            Error (403): Authentication failed due to invalid or missing token
-    """
-    logger.info(
-        f"reset_registry called, packages before reset: {len(storage.packages)}"
-    )
-
-    is_valid, error_response = check_auth_header()
-    if not is_valid:
-        logger.warning("Reset failed: authentication check failed")
-        return error_response
-
-    try:
-        logger.info("Performing storage reset...")
-        storage.reset()
-        logger.info(
-            f"Storage reset complete, packages after reset: {len(storage.packages)}"
-        )
-
-        # Reinitialize default token if not present
-        if DEFAULT_TOKEN not in _valid_tokens:
-            initialize_default_token()
-        logger.info(f"After reset, valid_tokens count: {len(_valid_tokens)}")
-
-        storage.record_event(
-            "registry_reset",
-            actor="api",
-            details={"initiator": "api"},
-        )
-        logger.info("Reset complete, returning 200")
-        return Response(status=200)
-
-    except Exception as e:
-        logger.error(f"Reset failed with exception: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/tracks", methods=["GET"])
-def get_tracks():
-    """Return the list of tracks the student plans to implement.
-
-    Returns:
-        tuple: JSON response with plannedTracks array and 200 status code
-            - plannedTracks (list): Array of track names the student plans to implement
-        Error (500): System error during retrieval
-    """
-    try:
-        return jsonify({"plannedTracks": ["Access control track"]}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/ingest", methods=["POST"])
-def ingest_model():
-    """Ingest and validate a HuggingFace model into the registry.
-
-    Evaluates a HuggingFace model URL against quality thresholds and creates
-    a package entry if all metrics pass. All non-latency metrics must score
-    at least 0.5 to be accepted.
-
-    Request Body (JSON):
-        - url (str, required): HuggingFace model URL (must start with
-          'https://huggingface.co/')
-
-    Quality Thresholds (minimum 0.5):
-        All non-latency metrics computed via compute_all_metrics
-
-    Returns:
-        tuple: JSON response and HTTP status code
-            Success (201):
-                - message (str): Success confirmation
-                - package (dict): Created package with embedded scores
-            Error (400): Invalid URL, missing URL, or failed quality threshold
-            Error (500): Server error during ingestion or evaluation
-    """
-    try:
-        data = request.get_json()
-        if not data or "url" not in data:
-            return jsonify({"error": "URL required"}), 400
-
-        url = data["url"]
-
-        if not url.startswith("https://huggingface.co/"):
-            return jsonify({"error": "URL must be a HuggingFace model URL"}), 400
-
-        try:
-            model = Model(model=ModelResource(url=url))
-            results = compute_all_metrics(model)
-        except Exception as e:
-            return jsonify({"error": f"Failed to evaluate model: {str(e)}"}), 500
-
-        # Compute net_score from all metrics
-        net_score = NetScore()
-        net_score.evaluate(list(results.values()))
-        results[net_score.name] = net_score
-
-        # Validate all non-latency metrics
-        for metric_name, metric in results.items():
-            if metric_name == "size_score":
-                if isinstance(metric.value, dict) and len(metric.value) > 0:
-                    max_score = max(metric.value.values())
-                    if max_score < 0.5:
-                        return jsonify(
-                            {
-                                "error": f"Failed threshold: {metric_name} max score {max_score:.3f} < 0.5"
-                            }
-                        ), 400
-                else:
-                    return jsonify(
-                        {
-                            "error": f"Failed threshold: {metric_name} is invalid or empty"
-                        }
-                    ), 400
-            elif isinstance(metric.value, (int, float)):
-                if metric.value < 0.5:
-                    return jsonify(
-                        {
-                            "error": f"Failed threshold: {metric_name} {metric.value:.3f} < 0.5"
-                        }
-                    ), 400
-            else:
-                return jsonify(
-                    {"error": f"Failed threshold: {metric_name} has invalid type"}
-                ), 400
-
-        parts = url.rstrip("/").split("/")
-        model_name = parts[-1] if parts else "unknown"
-
-        scores = {}
-        for name, metric in results.items():
-            scores[name] = {"score": metric.value, "latency_ms": metric.latency_ms}
-
-        package_id = str(uuid.uuid4())
-        package = Package(
-            id=package_id,
-            name=model_name,
-            version="1.0.0",
-            uploaded_by=DEFAULT_USERNAME,
-            upload_timestamp=datetime.now(timezone.utc),
-            size_bytes=0,
-            metadata={"url": url, "scores": scores},
-            s3_key=None,
-        )
-
-        storage.create_package(package)
-
-        storage.record_event(
-            "model_ingested",
-            package=package,
-            actor="api",
-            details={"source": "huggingface", "url": url},
-        )
-
-        return jsonify(
-            {"message": "Model ingested successfully", "package": package.to_dict()}
-        ), 201
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/ingest/upload", methods=["POST"])
-def ingest_upload():
-    """Ingest packages from uploaded CSV or JSON file.
-
-    Accepts a file upload (CSV or JSON format) containing package data.
-    Validates and stores all packages from the file.
-
-    Returns:
-        tuple: JSON response and HTTP status code
-            Success (201): Imported packages details
-            Error (400): No file, invalid format, validation errors
-            Error (500): Server error during processing
-    """
-    try:
-        if "file" not in request.files:
-            return jsonify({"error": "No file provided"}), 400
-
-        file = request.files["file"]
-
-        if file.filename == "":
-            return jsonify({"error": "No file selected"}), 400
-
-        allowed_extensions = {".csv", ".json"}
-        file_ext = os.path.splitext(file.filename)[1].lower()
-
-        if file_ext not in allowed_extensions:
-            return jsonify(
-                {
-                    "error": f"Invalid file type. Allowed types: {', '.join(allowed_extensions)}"
-                }
-            ), 400
-
-        file_content = file.read().decode("utf-8")
-
-        packages_data = []
-
-        if file_ext == ".csv":
-            packages_data = parse_csv_content(file_content)
-        elif file_ext == ".json":
-            packages_data = parse_json_content(file_content)
-
-        if not packages_data:
-            return jsonify({"error": "No valid package data found in file"}), 400
-
-        created_packages = []
-        errors = []
-
-        for idx, pkg_data in enumerate(packages_data):
-            try:
-                if not pkg_data.get("name") or not pkg_data.get("version"):
-                    errors.append(
-                        f"Row {idx + 1}: Missing required fields (name, version)"
-                    )
-                    continue
-
-                package_id = str(uuid.uuid4())
-                package = Package(
-                    id=package_id,
-                    name=pkg_data["name"],
-                    version=pkg_data["version"],
-                    uploaded_by=DEFAULT_USERNAME,
-                    upload_timestamp=datetime.now(timezone.utc),
-                    size_bytes=0,
-                    metadata=pkg_data.get("metadata", {}),
-                    s3_key=None,
-                )
-
-                storage.create_package(package)
-                created_packages.append(package.to_dict())
-
-            except Exception as e:
-                errors.append(f"Row {idx + 1}: {str(e)}")
-
-        if not created_packages and errors:
-            return jsonify(
-                {"error": "Failed to import any packages", "details": errors}
-            ), 400
-
-        response = {
-            "message": "Packages imported successfully",
-            "imported_count": len(created_packages),
-            "packages": created_packages,
-        }
-
-        if errors:
-            response["warnings"] = errors
-
-        return jsonify(response), 201
-
-    except Exception as e:
-        return jsonify({"error": f"Failed to process file: {str(e)}"}), 500
 
 
 # Frontend page routes
@@ -2005,14 +2041,14 @@ def ingest_page():
     return render_template("ingest.html")
 
 
-@app.route("/health/dashboard", methods=["GET"])
+@app.route("/dashboard/health", methods=["GET"])
+@app.route("/health", methods=["GET"])
 def health_dashboard_redirect():
     """Backward-compatible alias for the health dashboard route."""
     return render_template("health.html")
 
 
 if __name__ == "__main__":
-    initialize_default_token()
-    # Read port from environment variable (AWS EB sets this) or default to 8000
-    port = int(os.environ.get("PORT", 8000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    # Default admin user is auto-initialized by RegistryStorage.__init__()
+    # which calls self.reset() -> self._initialize_default_user()
+    app.run(host="0.0.0.0", port=8000, debug=True)

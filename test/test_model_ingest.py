@@ -19,6 +19,18 @@ def client():
         storage.reset()  # Reset after each test
 
 
+@pytest.fixture
+def auth_token(client):
+    """Get authentication token for API requests."""
+    auth_data = {
+        "user": {"name": "ece30861defaultadminuser", "is_admin": True},
+        "secret": {"password": "correcthorsebatterystaple123(!__+@**(A\'\"`;DROP TABLE packages;"}
+    }
+    response = client.put("/api/authenticate", json=auth_data)
+    assert response.status_code == 200
+    return response.get_json()
+
+
 def create_mock_metrics(
     license_score=0.8,
     ramp_up_score=0.7,
@@ -67,7 +79,7 @@ def create_mock_metrics(
 @patch("api_server.compute_all_metrics")
 @patch("api_server.Model")
 @patch("api_server.ModelResource")
-def test_ingest_model_success(mock_model_resource, mock_model, mock_compute, client):
+def test_ingest_model_success(mock_model_resource, mock_model, mock_compute, client, auth_token):
     """Test successful model ingestion with all metrics passing threshold."""
     # Setup mocks
     mock_metrics = create_mock_metrics()
@@ -75,8 +87,8 @@ def test_ingest_model_success(mock_model_resource, mock_model, mock_compute, cli
 
     # Make request
     response = client.post(
-        "/api/ingest", json={"url": "https://huggingface.co/test-org/test-model"}
-    )
+        "/ingest",
+        json={"url": "https://huggingface.co/test-org/test-model"}, headers={"X-Authorization": auth_token})
 
     # Verify response
     assert response.status_code == 201
@@ -84,19 +96,14 @@ def test_ingest_model_success(mock_model_resource, mock_model, mock_compute, cli
     assert data["message"] == "Model ingested successfully"
     assert "package" in data
     assert data["package"]["name"] == "test-model"
-    assert (
-        data["package"]["metadata"]["url"]
-        == "https://huggingface.co/test-org/test-model"
-    )
+    assert data["package"]["metadata"]["url"] == "https://huggingface.co/test-org/test-model"
     assert "scores" in data["package"]["metadata"]
 
 
 @patch("api_server.compute_all_metrics")
 @patch("api_server.Model")
 @patch("api_server.ModelResource")
-def test_ingest_model_fails_license_threshold(
-    mock_model_resource, mock_model, mock_compute, client
-):
+def test_ingest_model_fails_license_threshold(mock_model_resource, mock_model, mock_compute, client, auth_token):
     """Test model ingestion failure when license metric is below threshold."""
     # Setup mocks with license score < 0.5
     mock_metrics = create_mock_metrics(license_score=0.3)
@@ -104,8 +111,8 @@ def test_ingest_model_fails_license_threshold(
 
     # Make request
     response = client.post(
-        "/api/ingest", json={"url": "https://huggingface.co/test-org/test-model"}
-    )
+        "/ingest",
+        json={"url": "https://huggingface.co/test-org/test-model"}, headers={"X-Authorization": auth_token})
 
     # Verify response
     assert response.status_code == 400
@@ -117,9 +124,7 @@ def test_ingest_model_fails_license_threshold(
 @patch("api_server.compute_all_metrics")
 @patch("api_server.Model")
 @patch("api_server.ModelResource")
-def test_ingest_model_fails_size_threshold(
-    mock_model_resource, mock_model, mock_compute, client
-):
+def test_ingest_model_fails_size_threshold(mock_model_resource, mock_model, mock_compute, client, auth_token):
     """Test model ingestion failure when one device in size_score is below threshold."""
     # Setup mocks with raspberry_pi score < 0.5
     mock_metrics = create_mock_metrics(
@@ -134,23 +139,21 @@ def test_ingest_model_fails_size_threshold(
 
     # Make request
     response = client.post(
-        "/api/ingest", json={"url": "https://huggingface.co/test-org/test-model"}
-    )
+        "/ingest",
+        json={"url": "https://huggingface.co/test-org/test-model"}, headers={"X-Authorization": auth_token})
 
     # Verify response
     assert response.status_code == 201
     data = response.get_json()
-    # assert "Failed threshold" in data["error"]
-    # assert "size_score" in data["error"]
-    # assert "raspberry_pi" in data["error"]
+    #assert "Failed threshold" in data["error"]
+    #assert "size_score" in data["error"]
+    #assert "raspberry_pi" in data["error"]
 
 
 @patch("api_server.compute_all_metrics")
 @patch("api_server.Model")
 @patch("api_server.ModelResource")
-def test_ingest_model_fails_multiple_thresholds(
-    mock_model_resource, mock_model, mock_compute, client
-):
+def test_ingest_model_fails_multiple_thresholds(mock_model_resource, mock_model, mock_compute, client, auth_token):
     """Test model ingestion failure when multiple metrics are below threshold."""
     # Setup mocks with multiple scores < 0.5
     mock_metrics = create_mock_metrics(
@@ -162,8 +165,8 @@ def test_ingest_model_fails_multiple_thresholds(
 
     # Make request
     response = client.post(
-        "/api/ingest", json={"url": "https://huggingface.co/test-org/test-model"}
-    )
+        "/ingest",
+        json={"url": "https://huggingface.co/test-org/test-model"}, headers={"X-Authorization": auth_token})
 
     # Verify response - should fail on the first one encountered
     assert response.status_code == 400
@@ -174,9 +177,7 @@ def test_ingest_model_fails_multiple_thresholds(
 @patch("api_server.compute_all_metrics")
 @patch("api_server.Model")
 @patch("api_server.ModelResource")
-def test_ingest_model_exact_threshold(
-    mock_model_resource, mock_model, mock_compute, client
-):
+def test_ingest_model_exact_threshold(mock_model_resource, mock_model, mock_compute, client, auth_token):
     """Test model ingestion with metrics exactly at threshold (0.5)."""
     # Setup mocks with all scores exactly 0.5
     mock_metrics = create_mock_metrics(
@@ -198,8 +199,8 @@ def test_ingest_model_exact_threshold(
 
     # Make request
     response = client.post(
-        "/api/ingest", json={"url": "https://huggingface.co/test-org/test-model"}
-    )
+        "/ingest",
+        json={"url": "https://huggingface.co/test-org/test-model"}, headers={"X-Authorization": auth_token})
 
     # Verify response - should succeed with scores exactly at 0.5
     assert response.status_code == 201
@@ -207,18 +208,23 @@ def test_ingest_model_exact_threshold(
     assert data["message"] == "Model ingested successfully"
 
 
-def test_ingest_model_invalid_url(client):
+def test_ingest_model_invalid_url(client, auth_token):
     """Test model ingestion with non-HuggingFace URL."""
-    response = client.post("/api/ingest", json={"url": "https://github.com/test/repo"})
+    response = client.post(
+        "/ingest",
+        json={"url": "https://github.com/test/repo"}, headers={"X-Authorization": auth_token})
 
     assert response.status_code == 400
     data = response.get_json()
     assert "must be a HuggingFace model URL" in data["error"]
 
 
-def test_ingest_model_missing_url(client):
+def test_ingest_model_missing_url(client, auth_token):
     """Test model ingestion without URL."""
-    response = client.post("/api/ingest", json={})
+    response = client.post(
+        "/ingest",
+        json={}, headers={"X-Authorization": auth_token}
+    )
 
     assert response.status_code == 400
     data = response.get_json()
@@ -228,17 +234,15 @@ def test_ingest_model_missing_url(client):
 @patch("api_server.compute_all_metrics")
 @patch("api_server.Model")
 @patch("api_server.ModelResource")
-def test_ingest_model_computation_error(
-    mock_model_resource, mock_model, mock_compute, client
-):
+def test_ingest_model_computation_error(mock_model_resource, mock_model, mock_compute, client, auth_token):
     """Test model ingestion when metric computation fails."""
     # Setup mock to raise exception
     mock_compute.side_effect = Exception("Failed to compute metrics")
 
     # Make request
     response = client.post(
-        "/api/ingest", json={"url": "https://huggingface.co/test-org/test-model"}
-    )
+        "/ingest",
+        json={"url": "https://huggingface.co/test-org/test-model"}, headers={"X-Authorization": auth_token})
 
     # Verify response
     assert response.status_code == 500
@@ -249,9 +253,7 @@ def test_ingest_model_computation_error(
 @patch("api_server.compute_all_metrics")
 @patch("api_server.Model")
 @patch("api_server.ModelResource")
-def test_ingest_model_stores_scores_in_metadata(
-    mock_model_resource, mock_model, mock_compute, client
-):
+def test_ingest_model_stores_scores_in_metadata(mock_model_resource, mock_model, mock_compute, client, auth_token):
     """Test that model ingestion stores all metric scores in package metadata."""
     # Setup mocks
     mock_metrics = create_mock_metrics()
@@ -259,8 +261,8 @@ def test_ingest_model_stores_scores_in_metadata(
 
     # Make request
     response = client.post(
-        "/api/ingest", json={"url": "https://huggingface.co/test-org/test-model"}
-    )
+        "/ingest",
+        json={"url": "https://huggingface.co/test-org/test-model"}, headers={"X-Authorization": auth_token})
 
     # Verify scores are stored in metadata
     assert response.status_code == 201
@@ -269,15 +271,9 @@ def test_ingest_model_stores_scores_in_metadata(
 
     # Check that all metrics have scores
     expected_metrics = [
-        "license",
-        "ramp_up_time",
-        "bus_factor",
-        "dataset_and_code_score",
-        "dataset_quality",
-        "code_quality",
-        "performance_claims",
-        "size_score",
-        "net_score",
+        "license", "ramp_up_time", "bus_factor",
+        "dataset_and_code_score", "dataset_quality",
+        "code_quality", "performance_claims", "size_score", "net_score"
     ]
     for metric in expected_metrics:
         assert metric in scores
@@ -288,9 +284,7 @@ def test_ingest_model_stores_scores_in_metadata(
 @patch("api_server.compute_all_metrics")
 @patch("api_server.Model")
 @patch("api_server.ModelResource")
-def test_ingest_model_extracts_name_correctly(
-    mock_model_resource, mock_model, mock_compute, client
-):
+def test_ingest_model_extracts_name_correctly(mock_model_resource, mock_model, mock_compute, client, auth_token):
     """Test that model name is extracted correctly from URL."""
     # Setup mocks
     mock_metrics = create_mock_metrics()
@@ -306,7 +300,15 @@ def test_ingest_model_extracts_name_correctly(
     for url, expected_name in test_cases:
         storage.reset()  # Reset between tests
 
-        response = client.post("/api/ingest", json={"url": url})
+        # Get new token after reset (reset invalidates previous tokens)
+        auth_data = {
+            "user": {"name": "ece30861defaultadminuser", "is_admin": True},
+            "secret": {"password": "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE packages;"}
+        }
+        token_response = client.put("/api/authenticate", json=auth_data)
+        new_token = token_response.get_json()
+
+        response = client.post("/ingest", headers={"X-Authorization": new_token}, json={"url": url})
 
         assert response.status_code == 201
         data = response.get_json()

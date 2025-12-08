@@ -4,19 +4,109 @@ from collections import Counter, deque
 from datetime import datetime, timedelta, timezone
 from threading import Lock
 from typing import Dict, List, Optional, Tuple
-import regex as re
+import re
+import threading
 import logging
+import bcrypt
 
-from registry_models import Package
+from registry_models import Package, User, Token
 
 logger = logging.getLogger('storage')
 
 
-def regex_search_with_timeout(pattern: re.Pattern, text: str, timeout_seconds: float = 0.5) -> Optional[re.Match]:
-    """Execute regex search with native timeout protection.
+def is_safe_regex(pattern: str) -> bool:
+    """Validate regex pattern to prevent ReDoS attacks.
 
-    Uses the regex module's native timeout support which can interrupt
-    CPU-bound operations at the C level.
+    Checks for dangerous patterns that can cause catastrophic backtracking:
+    - Nested quantifiers like (a+)+ or (a*)*
+    - Adjacent quantifiers like a++ or a**
+    - Excessive length
+
+    Args:
+        pattern: Regex pattern string to validate
+
+    Returns:
+        bool: True if pattern is safe, False if potentially dangerous
+    """
+    logger.info(f"Validating regex pattern: {pattern}")
+
+    # Reject patterns that are too long
+    if len(pattern) > 100:
+        logger.warning(f"Regex pattern rejected: pattern too long ({len(pattern)} > 100)")
+        return False
+
+    # Check for nested quantifiers: (...)+ or (...)* or (...)?
+    # followed by another quantifier
+    dangerous_patterns = [
+        r'\([^)]*[+*?]\s*\)\s*[+*?]',  # (x+)+ or (x*)* or (x?)?
+        r'[+*?]\s*[+*?]',               # ++ or ** or +* etc.
+        r'\([^)]*[+*?]\s*\)\s*\{',      # (x+){n,m}
+        r'\{[^}]*\}\s*[+*?]',           # {n,m}+ or {n,m}*
+    ]
+
+    for danger_pattern in dangerous_patterns:
+        timed_out, match = regex_validate_with_timeout(danger_pattern, pattern, timeout_seconds=0.1)
+        if timed_out:
+            # Timeout or exception occurred - treat as unsafe
+            logger.warning(f"Regex pattern validation timed out or failed for pattern: {pattern}")
+            return False
+        if match:
+            logger.warning(f"Regex pattern rejected: dangerous pattern detected ({danger_pattern})")
+            return False
+
+    logger.debug(f"Regex pattern passed validation: {pattern}")
+    return True
+
+
+def regex_validate_with_timeout(pattern_str: str, text: str, timeout_seconds: float = 0.1) -> (bool, Optional[re.Match]):
+    """Execute regex validation search with timeout protection.
+
+    Used for validating regex patterns against dangerous patterns.
+    Uses threading to implement timeout since signal.alarm() doesn't work
+    in multi-threaded Flask applications.
+
+    Args:
+        pattern_str: Regex pattern string to compile and use
+        text: Text to search
+        timeout_seconds: Maximum time allowed for search (default 0.1s)
+
+    Returns:
+        bool: true if timed out, false otherwise
+        Optional[re.Match]: Match object if found within timeout, None otherwise
+    """
+    result = [None]  # Use list to allow modification in nested function
+    exception = [None]
+
+    def search():
+        try:
+            compiled_pattern = re.compile(pattern_str)
+            result[0] = compiled_pattern.search(text)
+        except Exception as e:
+            exception[0] = e
+
+    thread = threading.Thread(target=search)
+    thread.daemon = True
+    thread.start()
+    thread.join(timeout=timeout_seconds)
+
+    if thread.is_alive():
+        # Timeout occurred - thread is still running
+        # Note: We can't actually kill the thread, but we return None
+        # The thread will eventually finish in background
+        return True, None
+
+    if exception[0]:
+        # Exception occurred during search
+        return True, None
+
+    return False, result[0]
+
+
+def regex_search_with_timeout(pattern: re.Pattern, text: str, timeout_seconds: float = 0.5) -> Optional[re.Match]:
+    """Execute regex search with timeout protection.
+
+    Uses threading to implement timeout since signal.alarm() doesn't work
+    in multi-threaded Flask applications.
 
     Args:
         pattern: Compiled regex pattern
@@ -26,38 +116,31 @@ def regex_search_with_timeout(pattern: re.Pattern, text: str, timeout_seconds: f
     Returns:
         Optional[re.Match]: Match object if found within timeout, None otherwise
     """
-    try:
-        return pattern.search(text, timeout=timeout_seconds)
-    except TimeoutError:
-        logger.warning(f"Regex search timed out")
+    result = [None]  # Use list to allow modification in nested function
+    exception = [None]
+
+    def search():
+        try:
+            result[0] = pattern.search(text)
+        except Exception as e:
+            exception[0] = e
+
+    thread = threading.Thread(target=search)
+    thread.daemon = True
+    thread.start()
+    thread.join(timeout=timeout_seconds)
+
+    if thread.is_alive():
+        # Timeout occurred - thread is still running
+        # Note: We can't actually kill the thread, but we return None
+        # The thread will eventually finish in background
         return None
-    except Exception as e:
-        logger.warning(f"Regex search failed: {str(e)}")
+
+    if exception[0]:
+        # Exception occurred during search
         return None
 
-
-def regex_compile_with_timeout(pattern_str: str, flags: int = 0, timeout_seconds: float = 0.5) -> Optional[re.Pattern]:
-    """Compile regex pattern. Timeout will be applied during search operations.
-
-    Note: The regex module's compile() doesn't support timeout parameter.
-    Timeout protection is applied during search/match operations instead.
-
-    Args:
-        pattern_str: Regex pattern string to compile
-        flags: Regex flags (e.g., re.IGNORECASE)
-        timeout_seconds: Not used in compilation, but kept for API consistency.
-                        Timeout is applied during search operations.
-
-    Returns:
-        Optional[re.Pattern]: Compiled pattern if successful, None otherwise
-    """
-    try:
-        # regex.compile() doesn't support timeout parameter
-        # Timeout will be applied during search operations
-        return re.compile(pattern_str, flags)
-    except Exception as e:
-        logger.warning(f"Regex pattern compilation failed: {pattern_str}, error: {str(e)}")
-        return None
+    return result[0]
 
 
 class RegistryStorage:
@@ -70,6 +153,8 @@ class RegistryStorage:
     def __init__(self):
         """Initialize empty package storage."""
         self.packages: Dict[str, Package] = {}
+        self.users: Dict[str, User] = {}
+        self.tokens: Dict[str, Token] = {}
         self._activity_log: deque[dict] = deque(maxlen=1024)
         self._log_entries: deque[dict] = deque(maxlen=2048)
         self._lock = Lock()
@@ -79,6 +164,8 @@ class RegistryStorage:
             "package_deleted",
             "metrics_evaluated",
             "registry_reset",
+            "user_registered",
+            "user_deleted",
         ]
         self.reset()
 
@@ -87,16 +174,24 @@ class RegistryStorage:
 
         Performs a complete reset to initial state, clearing:
         - All packages (artifacts)
+        - All users (except default admin)
+        - All tokens (except default token)
         - Activity logs
         - Log entries
 
         This method is thread-safe and ensures complete cleanup.
+        Initializes the default admin user with all permissions.
         """
         with self._lock:
             # Create a new empty dict to ensure complete reset
             self.packages = {}
+            self.users = {}
+            self.tokens = {}
             self._activity_log.clear()
             self._log_entries.clear()
+
+            # Initialize default admin user
+            self._initialize_default_user()
 
     def create_package(self, package: Package) -> Package:
         """Store a new package.
@@ -149,24 +244,30 @@ class RegistryStorage:
         """Search packages by name or README content.
 
         Searches package names and README metadata for matches.
-        Implements ReDoS protection for regex searches using timeout mechanisms.
+        Implements ReDoS protection for regex searches with pattern validation
+        and timeout mechanisms.
 
         Args:
             query: Search string or regex pattern
             use_regex: If True, treat query as regex pattern
 
         Returns:
-            List[Package]: Matching packages, empty list if regex invalid
+            List[Package]: Matching packages, empty list if regex invalid or unsafe
         """
         results = []
         if use_regex:
             logger.info(f"Regex search initiated with pattern: {query}")
+            # Validate regex pattern for safety
+            if not is_safe_regex(query):
+                # Reject potentially dangerous patterns
+                logger.warning(f"Regex search rejected: pattern failed safety validation: {query}")
+                return []
 
-            # Compile pattern with timeout protection
-            pattern = regex_compile_with_timeout(query, re.IGNORECASE, timeout_seconds=0.5)
-            if pattern is None:
-                # Compilation timed out or failed
-                logger.warning(f"Regex search rejected: pattern compilation timed out or failed: {query}")
+            # Compile pattern
+            try:
+                pattern = re.compile(query, re.IGNORECASE)
+            except re.error as e:
+                logger.warning(f"Regex pattern compilation failed: {query}, error: {str(e)}")
                 return []
 
             # Search with timeout protection
@@ -181,30 +282,16 @@ class RegistryStorage:
                     continue  # Skip readme search if name matched
 
                 # Search readme if present
-                # Find readme key (case-insensitive lookup)
-                readme_key = None
                 if "readme" in package.metadata:
-                    readme_key = "readme"
-                else:
-                    # Fallback: case-insensitive search for readme key
-                    for key in package.metadata.keys():
-                        if isinstance(key, str) and key.lower() == "readme":
-                            readme_key = key
-                            break
+                    readme_text = str(package.metadata.get("readme", ""))
+                    # Limit readme length for search
+                    if len(readme_text) > 10000:
+                        readme_text = readme_text[:10000]
 
-                if readme_key:
-                    readme_value = package.metadata.get(readme_key)
-                    # Only search if readme value is a non-empty string
-                    if readme_value is not None and isinstance(readme_value, str) and readme_value.strip():
-                        readme_text = readme_value.strip()
-                        # Limit readme length for search
-                        if len(readme_text) > 10000:
-                            readme_text = readme_text[:10000]
-
-                        # Search readme with timeout
-                        match = regex_search_with_timeout(pattern, readme_text, timeout_seconds=0.5)
-                        if match:
-                            results.append(package)
+                    # Search readme with timeout
+                    match = regex_search_with_timeout(pattern, readme_text, timeout_seconds=0.5)
+                    if match:
+                        results.append(package)
 
             logger.debug(f"Regex search completed: {len(results)} packages found")
         else:
@@ -266,11 +353,7 @@ class RegistryStorage:
                 matching_packages = all_packages
             else:
                 # Process individual queries
-                # For exact name matching: return only ONE result total
-                found_exact_match = False
                 for query in queries:
-                    if found_exact_match:
-                        break
                     if not isinstance(query, dict):
                         continue
                     query_name = query.get("name", "")
@@ -279,10 +362,10 @@ class RegistryStorage:
                     if not isinstance(query_types, list):
                         query_types = []
 
+                    # Filter by name
                     if query_name and query_name != "*":
                         for pkg in self.packages.values():
-                            # Exact name match (case-sensitive)
-                            if query_name == pkg.name:
+                            if query_name.lower() in pkg.name.lower():
                                 # Filter by types if specified
                                 if query_types:
                                     url = pkg.metadata.get("url", "")
@@ -293,16 +376,8 @@ class RegistryStorage:
                                         pkg_type = "code"
                                     if pkg_type not in query_types:
                                         continue
-                                # Only add the first exact match and return immediately
-                                # This ensures only ONE result is returned
                                 if pkg not in matching_packages:
                                     matching_packages.append(pkg)
-                                    found_exact_match = True
-                                    # Break out of inner loop
-                                    break
-                        # If we found a match, stop processing remaining queries
-                        if found_exact_match:
-                            break
                     elif query_types:
                         # Filter by types only (when name is "*" or empty)
                         for pkg in self.packages.values():
@@ -364,6 +439,201 @@ class RegistryStorage:
                 return None
 
         return package
+
+    # User management methods -------------------------------------------------
+
+    def _initialize_default_user(self):
+        """Initialize the default admin user.
+
+        Creates the default admin user with username 'ece30861defaultadminuser'
+        and password 'correcthorsebatterystaple123(!__+@**(A'"`;DROP TABLE packages;'
+        This user has admin privileges and all permissions.
+        """
+        default_username = "ece30861defaultadminuser"
+        default_password = "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE packages;"
+
+        # Hash the password using bcrypt
+        password_hash = bcrypt.hashpw(default_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+        # Create default admin user with all permissions
+        default_user = User(
+            username=default_username,
+            password_hash=password_hash,
+            is_admin=True,
+            permissions={"upload", "search", "download"},
+            created_at=datetime.now(timezone.utc)
+        )
+
+        self.users[default_username] = default_user
+        logger.info(f"Initialized default admin user: {default_username}")
+
+    def create_user(self, username: str, password: str, is_admin: bool = False,
+                   permissions: Optional[set] = None) -> User:
+        """Create a new user.
+
+        Args:
+            username: Unique username
+            password: Plain text password (will be hashed)
+            is_admin: Whether user has admin privileges
+            permissions: Set of permissions (upload, search, download)
+
+        Returns:
+            User: The created user
+
+        Raises:
+            ValueError: If username already exists
+        """
+        if username in self.users:
+            raise ValueError(f"User {username} already exists")
+
+        # Hash the password
+        password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+        # Default permissions if not provided
+        if permissions is None:
+            permissions = set()
+
+        user = User(
+            username=username,
+            password_hash=password_hash,
+            is_admin=is_admin,
+            permissions=permissions,
+            created_at=datetime.now(timezone.utc)
+        )
+
+        self.users[username] = user
+        self.record_event("user_registered", actor=username, details={"is_admin": is_admin})
+        logger.info(f"Created user: {username}, admin={is_admin}, permissions={permissions}")
+        return user
+
+    def get_user(self, username: str) -> Optional[User]:
+        """Get a user by username.
+
+        Args:
+            username: Username to retrieve
+
+        Returns:
+            Optional[User]: User if found, None otherwise
+        """
+        return self.users.get(username)
+
+    def delete_user(self, username: str) -> Optional[User]:
+        """Delete a user by username.
+
+        Args:
+            username: Username to delete
+
+        Returns:
+            Optional[User]: Deleted user if found, None otherwise
+        """
+        user = self.users.pop(username, None)
+        if user:
+            # Also delete all tokens for this user
+            tokens_to_delete = [token for token, token_obj in self.tokens.items()
+                              if token_obj.username == username]
+            for token in tokens_to_delete:
+                del self.tokens[token]
+            self.record_event("user_deleted", actor=username)
+            logger.info(f"Deleted user: {username}")
+        return user
+
+    def verify_password(self, username: str, password: str) -> bool:
+        """Verify a user's password.
+
+        Args:
+            username: Username
+            password: Plain text password to verify
+
+        Returns:
+            bool: True if password is correct, False otherwise
+        """
+        user = self.users.get(username)
+        if not user:
+            return False
+
+        try:
+            return bcrypt.checkpw(password.encode('utf-8'), user.password_hash.encode('utf-8'))
+        except Exception as e:
+            logger.error(f"Error verifying password for {username}: {e}")
+            return False
+
+    # Token management methods ------------------------------------------------
+
+    def create_token(self, username: str) -> Token:
+        """Create an authentication token for a user.
+
+        Token is valid for 1000 API calls or 10 hours, whichever comes first.
+
+        Args:
+            username: Username to create token for
+
+        Returns:
+            Token: The created token
+
+        Raises:
+            ValueError: If user doesn't exist
+        """
+        if username not in self.users:
+            raise ValueError(f"User {username} not found")
+
+        import uuid
+        token_str = f"bearer {str(uuid.uuid4())}"
+        now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(hours=10)
+
+        token = Token(
+            token=token_str,
+            username=username,
+            created_at=now,
+            expires_at=expires_at,
+            usage_count=0,
+            max_usage=1000
+        )
+
+        self.tokens[token_str] = token
+        logger.info(f"Created token for user {username}, expires at {expires_at}")
+        return token
+
+    def get_token(self, token_str: str) -> Optional[Token]:
+        """Get a token by token string.
+
+        Args:
+            token_str: Token string
+
+        Returns:
+            Optional[Token]: Token if found and valid, None otherwise
+        """
+        token = self.tokens.get(token_str)
+        if token and token.is_valid():
+            return token
+        return None
+
+    def validate_and_use_token(self, token_str: str) -> Optional[str]:
+        """Validate token and increment usage counter.
+
+        Args:
+            token_str: Token string to validate
+
+        Returns:
+            Optional[str]: Username if token is valid, None otherwise
+        """
+        token = self.get_token(token_str)
+        if token:
+            token.increment_usage()
+            logger.debug(f"Token used ({token.usage_count}/{token.max_usage}) for user {token.username}")
+            return token.username
+        return None
+
+    def delete_token(self, token_str: str) -> Optional[Token]:
+        """Delete a token.
+
+        Args:
+            token_str: Token string to delete
+
+        Returns:
+            Optional[Token]: Deleted token if found, None otherwise
+        """
+        return self.tokens.pop(token_str, None)
 
     # Activity & log tracking -------------------------------------------------
     def record_event(
