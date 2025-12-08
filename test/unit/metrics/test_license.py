@@ -113,4 +113,3 @@ class TestLicenseMetric:
 
         assert metric.value == 0.0
         assert metric.details["model"]["justification"] == "README not found"
-

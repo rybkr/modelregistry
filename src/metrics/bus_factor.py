@@ -44,7 +44,7 @@ class BusFactor(Metric):
     def _get_contributors(self, model: Model) -> int:
         """Fetch number of contributors from code or model metadata."""
         contributors: int = 1
-        
+
         # Try code first (most reliable)
         if model.code:
             try:
@@ -54,7 +54,7 @@ class BusFactor(Metric):
                     return contributors
             except Exception:
                 pass
-        
+
         # Fallback to model metadata (HuggingFace models have author info)
         if model.model:
             try:
@@ -64,29 +64,37 @@ class BusFactor(Metric):
                 author = model_meta.get("author", "")
                 if author and "," in author:
                     # Multiple authors separated by comma
-                    contributors = len([a.strip() for a in author.split(",") if a.strip()])
+                    contributors = len(
+                        [a.strip() for a in author.split(",") if a.strip()]
+                    )
                 elif author:
                     contributors = 1
-                
+
                 # Also check if there's a library_name or organization (indicates team effort)
                 library_name = model_meta.get("library_name", "")
                 if library_name and library_name != "transformers":
                     # Custom library suggests team effort
                     contributors = max(contributors, 2)
-                
+
                 # Check for organization in model ID (e.g., "deepseek-ai/DeepSeek-R1")
                 if hasattr(model.model, "_repo_id"):
                     repo_id = getattr(model.model, "_repo_id", "")
                     if "/" in repo_id:
                         org = repo_id.split("/")[0]
                         # Organizations typically have multiple contributors
-                        if org and org not in ["google", "facebook", "microsoft"]:  # Known large orgs
+                        if org and org not in [
+                            "google",
+                            "facebook",
+                            "microsoft",
+                        ]:  # Known large orgs
                             contributors = max(contributors, 3)
                         elif org:
-                            contributors = max(contributors, 5)  # Large orgs have many contributors
+                            contributors = max(
+                                contributors, 5
+                            )  # Large orgs have many contributors
             except Exception:
                 pass
-        
+
         # Minimum of 1 contributor
         return max(1, contributors)
 
@@ -106,8 +114,10 @@ class BusFactor(Metric):
         elif contributors >= 2:
             contributor_score = 0.7 + 0.1 * (contributors - 1)  # 0.7 to 0.8
         else:
-            contributor_score = 0.6  # Single contributor gets 0.6 (ensures > 0.5 with recency)
-        
+            contributor_score = (
+                0.6  # Single contributor gets 0.6 (ensures > 0.5 with recency)
+            )
+
         base_score = contributor_score
 
         recency_score = 1.0

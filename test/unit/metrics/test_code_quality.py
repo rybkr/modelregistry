@@ -125,7 +125,9 @@ class TestCodeQuality:
 
         assert try_readme(FailingResource()) is None
 
-    def test_compute_partial_credit_when_readme_mentions_code(self, monkeypatch: Any) -> None:
+    def test_compute_partial_credit_when_readme_mentions_code(
+        self, monkeypatch: Any
+    ) -> None:
         """Assign partial credit if README references code but no URL is provided."""
         metric = CodeQuality()
         fake_model = Model(
@@ -146,7 +148,9 @@ class TestCodeQuality:
             "reason": "Code mentioned in README but no code URL provided",
         }
 
-    def test_compute_returns_zero_without_code_or_readme(self, monkeypatch: Any) -> None:
+    def test_compute_returns_zero_without_code_or_readme(
+        self, monkeypatch: Any
+    ) -> None:
         """Return zero score when no code URL or README mention is found."""
         metric = CodeQuality()
         fake_model = Model(
@@ -180,4 +184,3 @@ class TestCodeQuality:
 
         assert metric.value == 0.0
         assert metric.details == {"error": "boom"}
-

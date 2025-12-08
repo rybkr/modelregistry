@@ -104,4 +104,3 @@ class TestURLHandler:
         assert result is None
         repo_view.exists.assert_called_once_with("README.md")
         repo_view.read_text.assert_not_called()
-

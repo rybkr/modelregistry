@@ -89,27 +89,46 @@ class CodeQuality(Metric):
                 readme: Optional[str] = None
                 if model.model:
                     readme = try_readme(model.model)
-                
+
                 if readme:
                     readme_lower = readme.lower()
                     code_keywords = [
-                        "code", "github", "repository", "repo", "open-source", "open source",
-                        "source code", "open-sourced", "open sourced", "available", "download",
-                        "checkpoint", "implementation", "example", "script", "notebook"
+                        "code",
+                        "github",
+                        "repository",
+                        "repo",
+                        "open-source",
+                        "open source",
+                        "source code",
+                        "open-sourced",
+                        "open sourced",
+                        "available",
+                        "download",
+                        "checkpoint",
+                        "implementation",
+                        "example",
+                        "script",
+                        "notebook",
                     ]
-                    has_code_mention = any(keyword in readme_lower for keyword in code_keywords)
-                    
+                    has_code_mention = any(
+                        keyword in readme_lower for keyword in code_keywords
+                    )
+
                     if has_code_mention:
                         # Give partial credit for mentioning code in README
                         self.value = 0.6
-                        self.latency_ms = int(round((time.perf_counter() - start) * 1000))
+                        self.latency_ms = int(
+                            round((time.perf_counter() - start) * 1000)
+                        )
                         self.details = {
                             "partial_credit": True,
-                            "reason": "Code mentioned in README but no code URL provided"
+                            "reason": "Code mentioned in README but no code URL provided",
                         }
-                        logger.info("Code mentioned in README, giving partial credit 0.6")
+                        logger.info(
+                            "Code mentioned in README, giving partial credit 0.6"
+                        )
                         return None
-                
+
                 self.value = 0.0
                 self.latency_ms = int(round((time.perf_counter() - start) * 1000))
                 self.details = {"error": "No code URL provided"}

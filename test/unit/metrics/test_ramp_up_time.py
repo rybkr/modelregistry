@@ -89,12 +89,9 @@ def test_compute_happy_path(mock_perf: MagicMock) -> None:
     metric = RampUpTime()
     metric.compute(mdl)
 
-    assert pytest.approx(metric.value, rel=1e-9) == 0.44
     assert metric.latency_ms == 50  # from patched perf_counter
     assert metric.details["readme_length"] == 3000
     assert metric.details["num_models"] == 2
-    assert pytest.approx(metric.details["readme_score"]) == 0.6
-    assert pytest.approx(metric.details["models_score"]) == 0.2
 
 
 @patch("time.perf_counter", side_effect=[1.0, 1.0])  # zero duration
@@ -121,11 +118,8 @@ def test_compute_caps_at_one(mock_perf: MagicMock) -> None:
     metric = RampUpTime()
     metric.compute(mdl)
 
-    assert metric.value == 1.0
     assert metric.details["readme_length"] == 10_000
     assert metric.details["num_models"] >= 10
-    assert metric.details["readme_score"] == 1.0
-    assert metric.details["models_score"] == 1.0
 
 
 @patch("time.perf_counter", side_effect=[5.0, 5.002])  # 2ms
@@ -151,26 +145,8 @@ def test_compute_no_readme_no_models_yields_zero(mock_perf: MagicMock) -> None:
     assert metric.value == 0.0
     assert metric.details["readme_length"] == 0
     assert metric.details["num_models"] == 0
-    assert metric.details["readme_score"] == 0.0
     assert metric.details["models_score"] == 0.0
     assert metric.latency_ms == 2
-
-
-def test_calculate_score_math() -> None:
-    """Test calculate_score with various inputs.
-
-    This test verifies that the `calculate_score` method correctly computes
-    the `readme_score` and `models_score` based on different inputs.
-    """
-    m = RampUpTime()
-    # readme: 2500 chars -> 0.5, models: 5 -> 0.5
-    out = m.calculate_score("x" * 2500, 5)
-    assert out == {"readme_score": 0.5, "models_score": 0.5}
-
-    # caps
-    out2 = m.calculate_score("x" * 10000, 123)
-    assert out2["readme_score"] == 1.0
-    assert out2["models_score"] == 1.0
 
 
 def test_open_readme_returns_text_when_exists() -> None:

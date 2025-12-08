@@ -258,4 +258,3 @@ def _extract_tarball(url: str, headers: dict[str, Any], dest: Path) -> None:
 def _top_dir(root: Path) -> Path:
     dirs = [p for p in root.iterdir() if p.is_dir()]
     return dirs[0] if dirs else root
-    
