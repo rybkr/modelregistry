@@ -2013,4 +2013,6 @@ def health_dashboard_redirect():
 
 if __name__ == "__main__":
     initialize_default_token()
-    app.run(host="0.0.0.0", port=8000, debug=True)
+    # Read port from environment variable (AWS EB sets this) or default to 8000
+    port = int(os.environ.get("PORT", 8000))
+    app.run(host="0.0.0.0", port=port, debug=True)
