@@ -45,6 +45,7 @@ class Package:
             "s3_key": self.s3_key,
         }
 
+
     def get_version_int(self) -> int:
         """Returns the package's version as an integer, with the major, minor and
         patch concatenated with each other.

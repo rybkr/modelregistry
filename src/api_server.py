@@ -63,10 +63,6 @@ DEFAULT_USERNAME = "ece30861defaultadminuser"
 # Password from autograder - uses "packages" not "artifacts" as shown in OpenAPI spec example
 DEFAULT_PASSWORD = "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE packages;"
 
-# Backward compatibility: Default token for autograder
-# The autograder expects to use this token without authenticating first
-DEFAULT_TOKEN = "bearer default-admin-token"
-
 
 # Authentication helper
 def check_auth_header(required_permission: Optional[str] = None):
@@ -99,14 +95,8 @@ def check_auth_header(required_permission: Optional[str] = None):
     # Normalize token: strip whitespace and quotes (handles JSON-encoded strings)
     token_value = auth_header.strip().strip('"').strip("'")
 
-    # BACKWARD COMPATIBILITY: Check for default autograder token first
-    # This allows the autograder to work without authenticating
-    if token_value == DEFAULT_TOKEN:
-        logger.info("Using default autograder token (backward compatibility mode)")
-        username = DEFAULT_USERNAME
-    else:
-        # Validate token and increment usage counter (new security system)
-        username = storage.validate_and_use_token(token_value)
+    # Validate token and increment usage counter
+    username = storage.validate_and_use_token(token_value)
 
     if not username:
         logger.warning(f"Auth failed: token not recognized or expired")
@@ -118,8 +108,7 @@ def check_auth_header(required_permission: Optional[str] = None):
         ), None
 
     # Check permission if required
-    # BACKWARD COMPATIBILITY: Default token always has all permissions (admin)
-    if required_permission and token_value != DEFAULT_TOKEN:
+    if required_permission:
         user = storage.get_user(username)
         if not user:
             logger.warning(f"Auth failed: user {username} not found")
@@ -1372,41 +1361,6 @@ def list_artifacts():
         return response, 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-
-@app.route("/artifact/byName/<name>", methods=["GET"])
-@app.route("/api/artifact/byName/<name>", methods=["GET"])
-def get_artifact_by_name(name):
-    """Retrieve artifacts by name.
-
-    Args:
-        name: Artifact name to search for
-
-    Returns:
-        tuple: (JSON array of ArtifactMetadata, 200) or error response
-    """
-    logger.info(f"get_artifact_by_name called for name: {name}")
-
-    # Check auth with search permission
-    is_valid, error_response, _ = check_auth_header(required_permission="search")
-    if not is_valid:
-        logger.warning("get_artifact_by_name: auth check failed")
-        return error_response
-
-    # Search for packages with matching name
-    matching_packages = []
-    for package in storage.packages.values():
-        if package.name == name:
-            matching_packages.append(package)
-
-    # Convert to ArtifactMetadata format
-    artifacts = []
-    for package in matching_packages:
-        pkg_type = infer_artifact_type(package)
-        artifacts.append(package_to_artifact_metadata(package, pkg_type))
-
-    logger.info(f"Found {len(artifacts)} artifacts matching name '{name}'")
-    return jsonify(artifacts), 200
 
 
 @app.route("/api/artifacts/<artifact_type>/<artifact_id>", methods=["GET"])
