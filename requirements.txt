@@ -2,6 +2,7 @@ annotated-types==0.7.0
 anyio==4.11.0
 attrs==25.4.0
 autoflake==2.3.1
+bcrypt==5.0.0
 blinker==1.9.0
 boto3==1.41.2
 botocore==1.41.2
@@ -41,6 +42,7 @@ python-dotenv==1.2.1
 PyYAML==6.0.3
 regex==2024.11.6
 requests==2.32.5
+ruff==0.14.6
 s3transfer==0.15.0
 selenium==4.38.0
 shellingham==1.5.4
