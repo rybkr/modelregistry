@@ -213,7 +213,6 @@ class RegistryStorage:
                 else:
                     url = package.metadata.get("url","")
                     if url != "":
-                        breakpoint()
                         path = urlparse(url).path.strip("/").split("/")
                         owner = path[0]
                         repo = path[1]
