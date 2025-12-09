@@ -1,18 +1,23 @@
 from __future__ import annotations
 
+import base64
 from collections import Counter, deque
 from datetime import datetime, timedelta, timezone
+import os
 from threading import Lock
 from typing import Dict, List, Optional, Tuple
 import regex as re
 import logging
 
 from registry_models import Package
+from urllib.parse import urlparse
+
+import requests
 
 logger = logging.getLogger('storage')
 
 
-def regex_search_with_timeout(pattern: re.Pattern, text: str, timeout_seconds: float = 0.5) -> Optional[re.Match]:
+def regex_search_with_timeout(pattern: re.Pattern, text: str, timeout_seconds: float = 1.0) -> Optional[re.Match]:
     """Execute regex search with native timeout protection.
 
     Uses the regex module's native timeout support which can interrupt
@@ -175,7 +180,7 @@ class RegistryStorage:
                 package_name = package.name[:1000] if len(package.name) > 1000 else package.name
 
                 # Search name with timeout
-                match = regex_search_with_timeout(pattern, package_name, timeout_seconds=0.5)
+                match = regex_search_with_timeout(pattern, package_name, timeout_seconds=1.0)
                 if match:
                     results.append(package)
                     continue  # Skip readme search if name matched
@@ -202,9 +207,41 @@ class RegistryStorage:
                             readme_text = readme_text[:10000]
 
                         # Search readme with timeout
-                        match = regex_search_with_timeout(pattern, readme_text, timeout_seconds=0.5)
+                        match = regex_search_with_timeout(pattern, readme_text, timeout_seconds=1.0)
                         if match:
                             results.append(package)
+                else:
+                    url = package.metadata.get("url","")
+                    if url != "":
+                        breakpoint()
+                        path = urlparse(url).path.strip("/").split("/")
+                        owner = path[0]
+                        repo = path[1]
+                        hf_or_gh = False
+                        readme_url = ""
+                        r = None
+                        if "huggingface.co" in url:
+                            readme_url = f"https://huggingface.co/{owner}/{repo}/raw/main/README.md"
+                            hf_or_gh = True
+                            r = requests.get(readme_url)
+                        elif "github.com" in url:
+                            token = os.environ["GH_API_TOKEN"]
+                            headers = { "Authorization": f"Bearer {token}" }
+                            readme_url = f"https://api.github.com/repos/{owner}/{repo}/readme"
+                            hf_or_gh = True
+                            r = requests.get(readme_url, headers=headers)
+                        if hf_or_gh:
+                            if r.status_code != 404:
+                                data = r.text
+                                if "github.com" in url:
+                                    data = str(base64.b64decode(data))
+                                # Search readme with timeout
+                                match = regex_search_with_timeout(pattern, data, timeout_seconds=1.0)
+                                if match:
+                                    results.append(package)
+
+
+
 
             logger.debug(f"Regex search completed: {len(results)} packages found")
         else:
