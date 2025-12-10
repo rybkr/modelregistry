@@ -400,12 +400,18 @@ class RegistryStorage:
 
         # Validate type if provided
         if artifact_type:
-            url = package.metadata.get("url", "")
-            pkg_type = "model"
-            if "huggingface.co/datasets/" in url:
-                pkg_type = "dataset"
-            elif "huggingface.co/spaces/" in url or "github.com" in url or "gitlab.com" in url:
-                pkg_type = "code"
+            # Use stored artifact_type if available, otherwise infer from URL
+            if hasattr(package, 'artifact_type') and package.artifact_type:
+                pkg_type = package.artifact_type
+            else:
+                # Fallback: infer from URL for backward compatibility
+                url = package.metadata.get("url", "")
+                pkg_type = "model"
+                if "huggingface.co/datasets/" in url:
+                    pkg_type = "dataset"
+                elif "huggingface.co/spaces/" in url or "github.com" in url or "gitlab.com" in url:
+                    pkg_type = "code"
+            
             if pkg_type != artifact_type:
                 return None
 
