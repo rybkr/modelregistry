@@ -20,6 +20,8 @@ from metrics_engine import compute_all_metrics
 from metrics.net_score import NetScore
 from models import Model
 from resources.model_resource import ModelResource
+from resources.dataset_resource import DatasetResource
+from resources.code_resource import CodeResource
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -853,29 +855,38 @@ def create_artifact(artifact_type):
 
     # Ingest and compute metrics (similar to /api/ingest)
     try:
-        model = Model(model=ModelResource(url=url))
-        results = compute_all_metrics(model)
+        if artifact_type == "dataset":
+            # Must be a dataset
+            dataset = DatasetResource(url=url)
+            scores = {}
+        elif artifact_type == "code":
+            code = CodeResource(url=url)
+            scores={}
+        else:
+            model = Model(model=ModelResource(url=url))
+            results = compute_all_metrics(model)
+            # Compute net_score
+            net_score = NetScore()
+            net_score.evaluate(list(results.values()))
+            results[net_score.name] = net_score
+
+            # Extract artifact name from URL
+            parts = url.rstrip("/").split("/")
+
+            # Store scores
+            scores = {}
+            for name, metric in results.items():
+                scores[name] = {"score": metric.value, "latency_ms": metric.latency_ms}
+
     except Exception as e:
         # If rating fails, return 424
         return jsonify({"error": f"Failed to compute metrics: {str(e)}"}), 424
-
-    # Compute net_score
-    net_score = NetScore()
-    net_score.evaluate(list(results.values()))
-    results[net_score.name] = net_score
-
-    # Extract artifact name from URL
-    parts = url.rstrip("/").split("/")
-
-    # Store scores
-    scores = {}
-    for name, metric in results.items():
-        scores[name] = {"score": metric.value, "latency_ms": metric.latency_ms}
-
     # Create package
+
     package_id = str(uuid.uuid4())
     package = Package(
         id=package_id,
+        artifact_type = artifact_type,
         name=artifact_name,
         version="1.0.0",
         uploaded_by=DEFAULT_USERNAME,

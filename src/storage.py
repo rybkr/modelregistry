@@ -223,17 +223,17 @@ class RegistryStorage:
                 else:
                     url = package.metadata.get("url","")
                     if url != "":
-                        path = urlparse(url).path.strip("/").split("/")
-                        owner = path[0]
-                        repo = path[1]
                         hf_or_gh = False
                         readme_url = ""
                         r = None
                         if "huggingface.co" in url:
-                            readme_url = f"https://huggingface.co/{owner}/{repo}/raw/main/README.md"
+                            readme_url = url + "/raw/main/README.md"
                             hf_or_gh = True
                             r = requests.get(readme_url)
                         elif "github.com" in url:
+                            path = urlparse(url).path.strip("/").split("/")
+                            owner = path[0]
+                            repo = path[1]
                             token = os.environ["GH_API_TOKEN"]
                             headers = { "Authorization": f"Bearer {token}" }
                             readme_url = f"https://api.github.com/repos/{owner}/{repo}/readme"
@@ -243,7 +243,7 @@ class RegistryStorage:
                             if r.status_code != 404:
                                 data = r.text
                                 if "github.com" in url:
-                                    data = str(base64.b64decode(data))
+                                    data = str(base64.b64decode(r.json().get('content')))
                                 # Search readme with timeout
                                 match = regex_search_with_timeout(pattern, data, timeout_seconds=1.0)
                                 if match:
