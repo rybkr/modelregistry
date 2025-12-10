@@ -16,8 +16,45 @@ import requests
 
 logger = logging.getLogger('storage')
 
+def is_safe_regex(pattern: str) -> bool:
+    """Validate regex pattern to prevent ReDoS attacks.
 
-def regex_search_with_timeout(pattern: re.Pattern, text: str, timeout_seconds: float = 1.0) -> Optional[re.Match]:
+    Checks for dangerous patterns that can cause catastrophic backtracking:
+    - Nested quantifiers like (a+)+ or (a*)*
+    - Adjacent quantifiers like a++ or a**
+    - Excessive length
+
+    Args:
+        pattern: Regex pattern string to validate
+
+    Returns:
+        bool: True if pattern is safe, False if potentially dangerous
+    """
+    logger.info(f"Validating regex pattern: {pattern}")
+
+    # Reject patterns that are too long
+    if len(pattern) > 100:
+        logger.warning(f"Regex pattern rejected: pattern too long ({len(pattern)} > 100)")
+        return False
+
+    # Check for nested quantifiers: (...)+ or (...)* or (...)?
+    # followed by another quantifier
+    dangerous_patterns = [
+        r'\([^)]*[+*?]\s*\)\s*[+*?]',  # (x+)+ or (x*)* or (x?)?
+    ]
+
+    for danger_pattern in dangerous_patterns:
+        compiled = re.compile(danger_pattern)
+        match = compiled.search(pattern, timeout=0.1)
+        if match:
+            logger.warning(f"Regex pattern rejected: dangerous pattern detected ({danger_pattern})")
+            return False
+
+    logger.debug(f"Regex pattern passed validation: {pattern}")
+    return True
+
+
+def regex_search_with_timeout(pattern: re.Pattern, text: str, timeout_seconds: float = 0.2) -> Optional[re.Match]:
     """Execute regex search with native timeout protection.
 
     Uses the regex module's native timeout support which can interrupt
@@ -26,7 +63,7 @@ def regex_search_with_timeout(pattern: re.Pattern, text: str, timeout_seconds: f
     Args:
         pattern: Compiled regex pattern
         text: Text to search
-        timeout_seconds: Maximum time allowed for search (default 0.5s)
+        timeout_seconds: Maximum time allowed for search (default 0.2s)
 
     Returns:
         Optional[re.Match]: Match object if found within timeout, None otherwise
@@ -35,13 +72,14 @@ def regex_search_with_timeout(pattern: re.Pattern, text: str, timeout_seconds: f
         return pattern.search(text, timeout=timeout_seconds)
     except TimeoutError:
         logger.warning(f"Regex search timed out")
+        raise
         return None
     except Exception as e:
         logger.warning(f"Regex search failed: {str(e)}")
         return None
 
 
-def regex_compile_with_timeout(pattern_str: str, flags: int = 0, timeout_seconds: float = 0.5) -> Optional[re.Pattern]:
+def regex_compile_with_timeout(pattern_str: str, flags: int = 0, timeout_seconds: float = 0.2) -> Optional[re.Pattern]:
     """Compile regex pattern. Timeout will be applied during search operations.
 
     Note: The regex module's compile() doesn't support timeout parameter.
@@ -175,10 +213,12 @@ class RegistryStorage:
         """
         results = []
         if use_regex:
+            if not is_safe_regex(query):
+                raise TimeoutError
             logger.info(f"Regex search initiated with pattern: {query}")
 
             # Compile pattern with timeout protection
-            pattern = regex_compile_with_timeout(query, re.IGNORECASE, timeout_seconds=0.5)
+            pattern = regex_compile_with_timeout(query, re.IGNORECASE, timeout_seconds=0.2)
             if pattern is None:
                 # Compilation timed out or failed
                 logger.warning(f"Regex search rejected: pattern compilation timed out or failed: {query}")
@@ -190,7 +230,7 @@ class RegistryStorage:
                 package_name = package.name[:1000] if len(package.name) > 1000 else package.name
 
                 # Search name with timeout
-                match = regex_search_with_timeout(pattern, package_name, timeout_seconds=1.0)
+                match = regex_search_with_timeout(pattern, package_name, timeout_seconds=0.2)
                 if match:
                     results.append(package)
                     continue  # Skip readme search if name matched
@@ -217,7 +257,7 @@ class RegistryStorage:
                             readme_text = readme_text[:10000]
 
                         # Search readme with timeout
-                        match = regex_search_with_timeout(pattern, readme_text, timeout_seconds=1.0)
+                        match = regex_search_with_timeout(pattern, readme_text, timeout_seconds=0.2)
                         if match:
                             results.append(package)
                 else:
@@ -245,7 +285,7 @@ class RegistryStorage:
                                 if "github.com" in url:
                                     data = str(base64.b64decode(r.json().get('content')))
                                 # Search readme with timeout
-                                match = regex_search_with_timeout(pattern, data, timeout_seconds=1.0)
+                                match = regex_search_with_timeout(pattern, data, timeout_seconds=0.2)
                                 if match:
                                     results.append(package)
 
