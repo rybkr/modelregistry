@@ -154,6 +154,22 @@ def check_auth_header():
     return True, None, user_info
 
 
+def infer_artifact_type_from_url(url: str) -> str:
+    """Infer artifact type from URL.
+
+    Args:
+        url: The artifact source URL
+
+    Returns:
+        str: "model", "dataset", or "code"
+    """
+    if "huggingface.co/datasets/" in url:
+        return "dataset"
+    elif "huggingface.co/spaces/" in url or "github.com" in url or "gitlab.com" in url:
+        return "code"
+    return "model"
+
+
 def infer_artifact_type(package: Package) -> str:
     """Infer artifact type from package URL or metadata.
 
@@ -164,11 +180,7 @@ def infer_artifact_type(package: Package) -> str:
         str: "model", "dataset", or "code" (default: "model")
     """
     url = package.metadata.get("url", "")
-    if "huggingface.co/datasets/" in url:
-        return "dataset"
-    elif "huggingface.co/spaces/" in url or "github.com" in url or "gitlab.com" in url:
-        return "code"
-    return "model"
+    return infer_artifact_type_from_url(url)
 
 
 def package_to_artifact_metadata(
@@ -201,11 +213,16 @@ def package_to_artifact(package: Package, artifact_type: Optional[str] = None) -
     url = package.metadata.get("url", "")
     artifact_data = {"url": url}
 
+    # Construct download_url in the format expected by autograder: {host}/download/{artifact_name}
     try:
-        download_url = f"/packages/{package.id}/download"
-        artifact_data["download_url"] = download_url
-    except Exception:
-        if "download_url" in package.metadata:
+        # Use request context to get the host and construct download URL
+        base_url = request.url_root.rstrip('/')
+        artifact_data["download_url"] = f"{base_url}/download/{package.name}"
+    except RuntimeError:
+        # Fallback if request context is not available (e.g., in tests)
+        if url:
+            artifact_data["download_url"] = url
+        elif "download_url" in package.metadata:
             artifact_data["download_url"] = package.metadata["download_url"]
 
     return {
@@ -526,9 +543,15 @@ def create_package():
     # Generate package ID
     package_id = str(uuid.uuid4())
 
+    # Infer artifact type from metadata URL
+    artifact_type = "model"  # default
+    if metadata and "url" in metadata:
+        artifact_type = infer_artifact_type_from_url(metadata["url"])
+
     # Create package
     package = Package(
         id=package_id,
+        artifact_type=artifact_type,
         name=name,
         version=version,
         uploaded_by=DEFAULT_USERNAME,
@@ -861,7 +884,7 @@ def create_artifact(artifact_type):
             scores = {}
         elif artifact_type == "code":
             code = CodeResource(url=url)
-            scores={}
+            scores = {}
         else:
             model = Model(model=ModelResource(url=url))
             results = compute_all_metrics(model)
@@ -886,7 +909,7 @@ def create_artifact(artifact_type):
     package_id = str(uuid.uuid4())
     package = Package(
         id=package_id,
-        artifact_type = artifact_type,
+        artifact_type=artifact_type,
         name=artifact_name,
         version="1.0.0",
         uploaded_by=DEFAULT_USERNAME,
@@ -2048,8 +2071,12 @@ def ingest_model():
             scores[name] = {"score": metric.value, "latency_ms": metric.latency_ms}
 
         package_id = str(uuid.uuid4())
+        # Infer artifact type from URL
+        artifact_type = infer_artifact_type_from_url(url)
+        
         package = Package(
             id=package_id,
+            artifact_type=artifact_type,
             name=model_name,
             version="1.0.0",
             uploaded_by=DEFAULT_USERNAME,
@@ -2132,14 +2159,21 @@ def ingest_upload():
                     continue
 
                 package_id = str(uuid.uuid4())
+                # Infer artifact type from metadata URL
+                metadata = pkg_data.get("metadata", {})
+                artifact_type = "model"  # default
+                if "url" in metadata:
+                    artifact_type = infer_artifact_type_from_url(metadata["url"])
+                
                 package = Package(
                     id=package_id,
+                    artifact_type=artifact_type,
                     name=pkg_data["name"],
                     version=pkg_data["version"],
                     uploaded_by=DEFAULT_USERNAME,
                     upload_timestamp=datetime.now(timezone.utc),
                     size_bytes=0,
-                    metadata=pkg_data.get("metadata", {}),
+                    metadata=metadata,
                     s3_key=None,
                 )
 
