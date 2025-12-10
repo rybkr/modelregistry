@@ -14,6 +14,9 @@ class CodeResource(_BaseResource):
         if self._is_hf_space_url():
             self._repo_id = self._hf_id_from_url()
             self._client = HFClient()
+        if self.is_gh_url():
+            self._repo_id = self._gh_id_from_url()
+            self._client = GitHubClient()
 
     def _is_hf_space_url(self) -> bool:
         """Check if the URL corresponds to a Hugging Face dataset.
@@ -22,6 +25,9 @@ class CodeResource(_BaseResource):
             bool: True if the URL is a Hugging Face dataset URL, False otherwise.
         """
         return "huggingface.co/spaces/" in self.url
+
+    def is_gh_url(self) -> bool:
+        return "github.com" in self.url
 
     def fetch_metadata(self) -> Any:
         """Retrieves metadata associated with the resource.

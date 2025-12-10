@@ -20,6 +20,7 @@ class Package:
     """
 
     id: str
+    artifact_type: str
     name: str
     version: str
     uploaded_by: str
@@ -36,6 +37,7 @@ class Package:
         """
         return {
             "id": self.id,
+            "artifact_type": self.artifact_type,
             "name": self.name,
             "version": self.version,
             "uploaded_by": self.uploaded_by,

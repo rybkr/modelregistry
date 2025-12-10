@@ -35,6 +35,10 @@ class _BaseResource(BaseModel):
             context={"url": self.url},
         )
 
+    def _gh_id_from_url(self) -> str:
+        path = urlparse(self.url)
+        return path.path[0] + "/" + path.path[1]
+
     def fetch_metadata(self) -> dict[str, Any]:
         raise NotImplementedError
 
