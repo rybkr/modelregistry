@@ -82,12 +82,14 @@ def check_auth_header():
     """Check if X-Authorization header is present and token is valid.
 
     Per OpenAPI spec, X-Authorization header is required for certain endpoints.
-    Validates header presence and token validity against _valid_tokens set.
+    Validates header presence and token validity using new storage-based token system.
+    Falls back to old _valid_tokens set for backward compatibility.
 
     Returns:
-        tuple: (is_valid, error_response)
+        tuple: (is_valid, error_response, user_info)
             - is_valid (bool): True if header present and token valid, False otherwise
             - error_response (Optional[tuple]): (json_response, status_code) if invalid, None if valid
+            - user_info (Optional[dict]): User info if authenticated, None otherwise
     """
     auth_header = request.headers.get("X-Authorization")
     logger.info(f"check_auth_header called, header present: {auth_header is not None}")
@@ -101,9 +103,26 @@ def check_auth_header():
                 }
             ),
             403,
-        )
+        ), None
 
     token_value = auth_header.strip().strip('"').strip("'")
+
+    # Check new storage-based token system first
+    token_info = storage.get_token(token_value)
+    if token_info:
+        # Valid token from new system
+        storage.increment_token_usage(token_value)
+        user = storage.get_user_by_id(token_info.user_id)
+        user_info = {
+            "username": token_info.username,
+            "user_id": token_info.user_id,
+            "is_admin": user.is_admin if user else False,
+            "permissions": user.permissions if user else []
+        }
+        logger.info(f"Token valid (new system): user={token_info.username}")
+        return True, None, user_info
+
+    # Fall back to old token system for backward compatibility
     is_default = token_value == DEFAULT_TOKEN
     is_in_valid_set = token_value in _valid_tokens
 
@@ -120,9 +139,17 @@ def check_auth_header():
                 }
             ),
             403,
-        )
+        ), None
 
-    return True, None
+    # Old system - assume default admin permissions
+    user_info = {
+        "username": DEFAULT_USERNAME,
+        "user_id": "default",
+        "is_admin": True,
+        "permissions": ["upload", "search", "download", "admin"]
+    }
+
+    return True, None, user_info
 
 
 def infer_artifact_type(package: Package) -> str:
@@ -565,7 +592,7 @@ def rate_package(package_id):
     Returns:
         tuple: (boolean JSON, 200) or error response
     """
-    is_valid, error_response = check_auth_header()
+    is_valid, error_response, user_info = check_auth_header()
     if not is_valid:
         return error_response
 
@@ -613,7 +640,7 @@ def list_artifacts():
     Returns:
         tuple: (JSON array of ArtifactMetadata, 200) or error response
     """
-    is_valid, error_response = check_auth_header()
+    is_valid, error_response, user_info = check_auth_header()
     if not is_valid:
         logger.warning("list_artifacts: auth check failed")
         return error_response
@@ -694,7 +721,7 @@ def get_artifact(artifact_type, artifact_id):
     """
     logger.info(f"get_artifact called: id={artifact_id} type={artifact_type}")
 
-    is_valid, error_response = check_auth_header()
+    is_valid, error_response, user_info = check_auth_header()
     if not is_valid:
         return error_response
 
@@ -722,7 +749,7 @@ def update_artifact(artifact_type, artifact_id):
     Returns:
         tuple: (200) or error response
     """
-    is_valid, error_response = check_auth_header()
+    is_valid, error_response, user_info = check_auth_header()
     if not is_valid:
         return error_response
 
@@ -780,7 +807,7 @@ def delete_artifact(artifact_type, artifact_id):
     Returns:
         tuple: (200) on success, or error response (400/403/404)
     """
-    is_valid, error_response = check_auth_header()
+    is_valid, error_response, user_info = check_auth_header()
     if not is_valid:
         return error_response
 
@@ -804,7 +831,7 @@ def create_artifact(artifact_type):
     Returns:
         tuple: (Artifact JSON, 201/202/424) or error response
     """
-    is_valid, error_response = check_auth_header()
+    is_valid, error_response, user_info = check_auth_header()
     if not is_valid:
         return error_response
 
@@ -879,7 +906,7 @@ def get_model_rating(artifact_id):
     Returns:
         tuple: (ModelRating JSON, 200) or error response
     """
-    is_valid, error_response = check_auth_header()
+    is_valid, error_response, user_info = check_auth_header()
     if not is_valid:
         return error_response
 
@@ -1200,7 +1227,7 @@ def get_artifact_cost(artifact_type, artifact_id):
         Format when dependency=false: {"artifact_id": {"total_cost": value}}
         Format when dependency=true: {"artifact_id": {"standalone_cost": value, "total_cost": value}, ...}
     """
-    is_valid, error_response = check_auth_header()
+    is_valid, error_response, user_info = check_auth_header()
     if not is_valid:
         return error_response
 
@@ -1273,7 +1300,7 @@ def get_artifact_lineage(artifact_id):
     Returns:
         tuple: (ArtifactLineageGraph JSON, 200) or error response
     """
-    is_valid, error_response = check_auth_header()
+    is_valid, error_response, user_info = check_auth_header()
     if not is_valid:
         return error_response
 
@@ -1500,7 +1527,7 @@ def check_artifact_license(artifact_id):
     Returns:
         tuple: (boolean JSON, 200) or error response
     """
-    is_valid, error_response = check_auth_header()
+    is_valid, error_response, user_info = check_auth_header()
     if not is_valid:
         return error_response
 
@@ -1555,7 +1582,7 @@ def get_artifacts_by_name(artifact_name):
     """
     logger.info(f"get_artifacts_by_name called with name: {artifact_name}")
 
-    is_valid, error_response = check_auth_header()
+    is_valid, error_response, user_info = check_auth_header()
     if not is_valid:
         logger.warning("get_artifacts_by_name: auth check failed")
         return error_response
@@ -1594,7 +1621,7 @@ def search_artifacts_by_regex():
     Returns:
         tuple: (Array of ArtifactMetadata, 200) or error response
     """
-    is_valid, error_response = check_auth_header()
+    is_valid, error_response, user_info = check_auth_header()
     if not is_valid:
         return error_response
 
@@ -1693,6 +1720,32 @@ def authenticate():
             f"Auth attempt for username: {username}, password length: {len(password)}"
         )
 
+        # Check new storage-based user system
+        from auth import verify_password, generate_token
+        from datetime import timedelta
+        from registry_models import TokenInfo
+
+        user = storage.get_user(username)
+        if user and verify_password(password, user.password_hash):
+            # Valid credentials - create new token
+            token = f"bearer {generate_token()}"
+            token_info = TokenInfo(
+                token=token,
+                user_id=user.user_id,
+                username=username,
+                created_at=datetime.now(timezone.utc),
+                usage_count=0,
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=10)
+            )
+            storage.create_token(token_info)
+
+            logger.info(
+                f"Auth successful (new system), token generated, valid_tokens count: {len(storage.tokens)}"
+            )
+
+            return jsonify(token), 200
+
+        # Fall back to old system for backward compatibility (default admin)
         username_valid = username == DEFAULT_USERNAME
         password_valid = password == DEFAULT_PASSWORD
 
@@ -1737,7 +1790,7 @@ def reset_registry():
         f"reset_registry called, packages before reset: {len(storage.packages)}"
     )
 
-    is_valid, error_response = check_auth_header()
+    is_valid, error_response, user_info = check_auth_header()
     if not is_valid:
         logger.warning("Reset failed: authentication check failed")
         return error_response
@@ -1780,6 +1833,127 @@ def get_tracks():
         return jsonify({"plannedTracks": ["Access control track"]}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# User Management Endpoints (Security Track Phase 2)
+@app.route("/api/users", methods=["POST"])
+def register_user():
+    """Register a new user (admin only).
+
+    Request Body: UserRegistrationRequest with username, password, permissions
+    Returns:
+        tuple: (UserInfo JSON, 201) or error response
+            Success (201): User created successfully
+            Error (400): Invalid request body or missing fields
+            Error (401): User already exists
+            Error (403): Authentication failed or insufficient permissions
+    """
+    is_valid, error_response, user_info = check_auth_header()
+    if not is_valid:
+        return error_response
+
+    # Check if user is admin
+    if not user_info or not user_info.get("is_admin"):
+        return jsonify({"error": "Insufficient permissions. Admin access required."}), 403
+
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Request body required"}), 400
+
+        username = data.get("username")
+        password = data.get("password")
+        permissions = data.get("permissions", [])
+        is_admin = data.get("is_admin", False)
+
+        if not username or not password:
+            return jsonify({"error": "Username and password are required"}), 400
+
+        # Check if user already exists
+        if storage.get_user(username):
+            return jsonify({"error": "User already exists"}), 401
+
+        # Create new user
+        from auth import hash_password
+        from registry_models import User
+
+        new_user = User(
+            user_id=str(uuid.uuid4()),
+            username=username,
+            password_hash=hash_password(password),
+            permissions=permissions,
+            is_admin=is_admin,
+            created_at=datetime.now(timezone.utc)
+        )
+
+        storage.create_user(new_user)
+
+        logger.info(f"User '{username}' registered successfully by '{user_info['username']}'")
+
+        return jsonify(new_user.to_dict()), 201
+
+    except Exception as e:
+        logger.error(f"User registration failed: {str(e)}")
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/users/<username>", methods=["DELETE"])
+def delete_user(username):
+    """Delete a user.
+
+    Users can delete their own account. Admins can delete any account.
+
+    Args:
+        username: Username to delete
+
+    Returns:
+        tuple: (Success message JSON, 200) or error response
+            Success (200): User deleted successfully
+            Error (403): Authentication failed or insufficient permissions
+            Error (404): User not found
+    """
+    is_valid, error_response, user_info = check_auth_header()
+    if not is_valid:
+        return error_response
+
+    # Check permissions: user can delete self OR admin can delete anyone
+    if username != user_info.get("username") and not user_info.get("is_admin"):
+        return jsonify({"error": "Insufficient permissions"}), 403
+
+    # Prevent deletion of default admin
+    if username == DEFAULT_USERNAME:
+        return jsonify({"error": "Cannot delete default admin user"}), 403
+
+    deleted_user = storage.delete_user(username)
+    if not deleted_user:
+        return jsonify({"error": "User not found"}), 404
+
+    logger.info(f"User '{username}' deleted by '{user_info['username']}'")
+
+    return jsonify({"message": f"User '{username}' deleted successfully"}), 200
+
+
+@app.route("/api/users", methods=["GET"])
+def list_users():
+    """List all users (admin only).
+
+    Returns:
+        tuple: (Array of UserInfo JSON, 200) or error response
+            Success (200): List of users (without password hashes)
+            Error (403): Authentication failed or insufficient permissions
+    """
+    is_valid, error_response, user_info = check_auth_header()
+    if not is_valid:
+        return error_response
+
+    # Check if user is admin
+    if not user_info or not user_info.get("is_admin"):
+        return jsonify({"error": "Insufficient permissions. Admin access required."}), 403
+
+    users = storage.list_users()
+    users_data = [user.to_dict() for user in users]
+
+    return jsonify(users_data), 200
 
 
 @app.route("/api/ingest", methods=["POST"])
