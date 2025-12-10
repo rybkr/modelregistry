@@ -13,6 +13,7 @@ import logging
 import zipfile
 import tempfile
 import re
+import time
 
 from registry_models import Package
 from storage import storage
@@ -899,6 +900,118 @@ def create_artifact(artifact_type):
     return jsonify(artifact), 201
 
 
+def _get_parent_model_ids_from_lineage(artifact_id: str) -> list[str]:
+    """Get list of parent model artifact IDs from lineage graph.
+    
+    Args:
+        artifact_id: ID of the artifact to get parents for
+        
+    Returns:
+        List of parent model artifact IDs (only models, not datasets)
+    """
+    package = storage.get_package(artifact_id)
+    if not package:
+        return []
+    
+    url = package.metadata.get("url", "")
+    if not url:
+        return []
+    
+    parent_model_ids = []
+    
+    try:
+        model = Model(model=ModelResource(url=url))
+        
+        # Try to read config.json to extract lineage information
+        try:
+            with model.model.open_files(allow_patterns=["config.json"]) as repo:
+                if repo.exists("config.json"):
+                    config = repo.read_json("config.json")
+                    
+                    # Extract base model information
+                    base_model_path = None
+                    if "_name_or_path" in config:
+                        base_model_path = config["_name_or_path"]
+                    elif "base_model" in config:
+                        base_model_path = config["base_model"]
+                    
+                    # Search for base model in storage
+                    if base_model_path:
+                        base_model_id = base_model_path
+                        if "huggingface.co" in base_model_path.lower():
+                            parsed = urlparse(base_model_path)
+                            path_parts = [
+                                x for x in parsed.path.strip("/").split("/") if x
+                            ]
+                            if len(path_parts) >= 2:
+                                base_model_id = f"{path_parts[0]}/{path_parts[1]}"
+                            elif len(path_parts) == 1:
+                                base_model_id = path_parts[0]
+                        elif "/" in base_model_path:
+                            base_model_id = base_model_path
+                        else:
+                            base_model_id = base_model_path
+                        
+                        found_parent = None
+                        all_packages = storage.list_packages(offset=0, limit=10000)
+                        for pkg in all_packages:
+                            pkg_url = pkg.metadata.get("url", "")
+                            pkg_name = pkg.name.lower()
+                            
+                            pkg_model_id = None
+                            if pkg_url and "huggingface.co" in pkg_url.lower():
+                                parsed = urlparse(pkg_url)
+                                path_parts = [
+                                    x for x in parsed.path.strip("/").split("/") if x
+                                ]
+                                if len(path_parts) >= 2:
+                                    pkg_model_id = f"{path_parts[0]}/{path_parts[1]}"
+                                elif len(path_parts) == 1:
+                                    pkg_model_id = path_parts[0]
+                            
+                            if (
+                                pkg_model_id
+                                and base_model_id.lower() == pkg_model_id.lower()
+                            ):
+                                found_parent = pkg
+                                break
+                            
+                            if (
+                                "/" not in base_model_id
+                                and pkg_name
+                                and base_model_id.lower() == pkg_name
+                            ):
+                                found_parent = pkg
+                                break
+                            
+                            base_model_name = (
+                                base_model_id.split("/")[-1].lower()
+                                if "/" in base_model_id
+                                else base_model_id.lower()
+                            )
+                            if (
+                                pkg_url
+                                and base_model_name in pkg_url.lower()
+                                and "huggingface.co" in pkg_url.lower()
+                            ):
+                                if base_model_name in pkg_url.lower().split("/")[-1]:
+                                    found_parent = pkg
+                                    break
+                        
+                        if found_parent:
+                            # Only include if it's a MODEL (not a dataset)
+                            if found_parent.category == "MODEL":
+                                parent_model_ids.append(found_parent.id)
+        
+        except Exception as e:
+            logger.warning(f"Could not read config.json for lineage: {str(e)}")
+    
+    except Exception as e:
+        logger.warning(f"Error building lineage for Treescore: {str(e)}")
+    
+    return parent_model_ids
+
+
 @app.route("/api/artifact/model/<artifact_id>/rate", methods=["GET"])
 def get_model_rating(artifact_id):
     """Get rating metrics for model artifact.
@@ -1005,8 +1118,43 @@ def get_model_rating(artifact_id):
     # Missing metrics default to 0.0 (not implemented yet)
     reproducibility_val = 0.0
     reproducibility_latency = 0.0
+    
+    # Calculate Treescore: Average of net_scores of all parent models from lineage graph
+    tree_score_start = time.time()
     tree_score_val = 0.0
     tree_score_latency = 0.0
+    
+    try:
+        parent_model_ids = _get_parent_model_ids_from_lineage(artifact_id)
+        
+        if parent_model_ids:
+            parent_net_scores = []
+            for parent_id in parent_model_ids:
+                parent_package = storage.get_package(parent_id)
+                if parent_package:
+                    parent_scores = parent_package.metadata.get("scores", {})
+                    parent_net_score_data = parent_scores.get("net_score", {})
+                    parent_net_score = parent_net_score_data.get("score")
+                    
+                    if parent_net_score is not None:
+                        try:
+                            parent_net_score = float(parent_net_score)
+                            if parent_net_score >= 0.0:  # Only include valid scores
+                                parent_net_scores.append(parent_net_score)
+                        except (TypeError, ValueError):
+                            pass  # Skip invalid scores
+            
+            if parent_net_scores:
+                tree_score_val = sum(parent_net_scores) / len(parent_net_scores)
+            # If no valid parent scores, tree_score_val remains 0.0
+        # If no parents, tree_score_val remains 0.0
+    
+    except Exception as e:
+        logger.warning(f"Error calculating Treescore: {str(e)}")
+        # tree_score_val remains 0.0 on error
+    
+    tree_score_end = time.time()
+    tree_score_latency = tree_score_end - tree_score_start  # Already in seconds
 
     # Build complete ModelRating response with all required fields
     rating = {
