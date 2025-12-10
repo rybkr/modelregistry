@@ -2,7 +2,7 @@ from flask import Flask, jsonify, request, render_template, Response, send_file
 from flask_cors import CORS
 from typing import Optional
 from datetime import datetime, timezone
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote
 
 import uuid
 import os
@@ -217,7 +217,10 @@ def package_to_artifact(package: Package, artifact_type: Optional[str] = None) -
     try:
         # Use request context to get the host and construct download URL
         base_url = request.url_root.rstrip('/')
-        artifact_data["download_url"] = f"{base_url}/download/{package.name}"
+        # URL-encode package name, preserving hyphens but encoding other special chars
+        artifact_name = package.name or ""
+        encoded_name = quote(artifact_name, safe='-') if artifact_name else ""
+        artifact_data["download_url"] = f"{base_url}/download/{encoded_name}"
     except RuntimeError:
         # Fallback if request context is not available (e.g., in tests)
         if url:
