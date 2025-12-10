@@ -10,7 +10,7 @@ import os
 
 # Get the directory where this file is located (project root)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SRC_DIR = os.path.join(BASE_DIR, 'src')
+SRC_DIR = os.path.join(BASE_DIR, "src")
 
 # Add src directory to Python path
 if SRC_DIR not in sys.path:
@@ -23,6 +23,7 @@ try:
 except Exception as e:
     # Log the error to stderr so it appears in EB logs
     import traceback
+
     sys.stderr.write(f"ERROR: Failed to import application: {e}\n")
     sys.stderr.write(traceback.format_exc())
     raise
@@ -32,5 +33,6 @@ application = app
 
 # Health check endpoint (EB checks this)
 if __name__ == "__main__":
-    application.run(debug=False, host="0.0.0.0", port=8000)
-
+    # Read port from environment variable (AWS EB sets this) or default to 8000
+    port = int(os.environ.get("PORT", 8000))
+    application.run(debug=False, host="0.0.0.0", port=port)

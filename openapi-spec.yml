@@ -2,7 +2,7 @@
 openapi: 3.0.2
 info:
   title: ECE 461 - Fall 2025 - Project Phase 2
-  version: 3.4.4
+  version: 3.4.6
   description: |-
     API for ECE 461/Fall 2025/Project Phase 2: A Trustworthy Model Registry"
 
@@ -653,13 +653,13 @@ paths:
                       - artifact_id: 3847247294
                         name: audience-classifier
                         source: config_json
-                      - artifact_id: 5738291045
-                        name: bookcorpus
-                        source: upstream_dataset
+                      - artifact_id: 9078563412
+                        name: bert-base-uncased
+                        source: config_json
                     edges:
-                      - from_node_artifact_id: 5738291045
+                      - from_node_artifact_id: 9078563412
                         to_node_artifact_id: 3847247294
-                        relationship: fine_tuning_dataset
+                        relationship: base_model
           description: Lineage graph extracted from structured metadata. (BASELINE)
         "400":
           description: "The lineage graph cannot be computed because the artifact metadata is missing or malformed."
@@ -714,6 +714,7 @@ paths:
           description: Authentication failed due to invalid or missing AuthenticationToken.
         "404":
           description: The artifact or GitHub project could not be found.
+            # License is compatible if score > 0.5
         "502":
           description: External license information could not be retrieved.
       operationId: ArtifactLicenseCheck

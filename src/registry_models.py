@@ -1,7 +1,7 @@
 import re
-from dataclasses import dataclass
-from datetime import datetime
-from typing import Any, Dict, Optional
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -44,7 +44,6 @@ class Package:
             "metadata": self.metadata,
             "s3_key": self.s3_key,
         }
-
 
     def get_version_int(self) -> int:
         """Returns the package's version as an integer, with the major, minor and
@@ -197,3 +196,76 @@ class Package:
                     return False
         # Catch all
         return False
+
+
+@dataclass
+class User:
+    """Represents a user in the registry.
+
+    Attributes:
+        user_id: Unique user identifier (UUID)
+        username: Unique username
+        password_hash: Hashed password (never store plaintext!)
+        permissions: List of permissions ('upload', 'search', 'download', 'admin')
+        is_admin: Whether user has admin privileges
+        created_at: When user was created
+    """
+
+    user_id: str
+    username: str
+    password_hash: str
+    permissions: List[str] = field(default_factory=list)
+    is_admin: bool = False
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert user to dictionary (without password hash).
+
+        Returns:
+            Dict[str, Any]: User data as dictionary (password_hash excluded for security)
+        """
+        return {
+            "user_id": self.user_id,
+            "username": self.username,
+            "permissions": self.permissions,
+            "is_admin": self.is_admin,
+            "created_at": self.created_at.isoformat(),
+        }
+
+
+@dataclass
+class TokenInfo:
+    """Represents an authentication token.
+
+    Attributes:
+        token: The authentication token string
+        user_id: User ID this token belongs to
+        username: Username for convenience
+        created_at: When token was created
+        usage_count: Number of times token has been used
+        expires_at: When token expires
+    """
+
+    token: str
+    user_id: str
+    username: str
+    created_at: datetime
+    usage_count: int = 0
+    expires_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def is_expired(self) -> bool:
+        """Check if token has expired (based on time or usage count).
+
+        Returns:
+            bool: True if token is expired
+        """
+        # Token expires after 1000 uses OR 10 hours
+        if self.usage_count >= 1000:
+            return True
+        if datetime.now(timezone.utc) >= self.expires_at:
+            return True
+        return False
+
+    def increment_usage(self) -> None:
+        """Increment usage counter."""
+        self.usage_count += 1
