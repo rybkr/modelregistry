@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Tuple
 import regex as re
 import logging
 
-from registry_models import Package
+from registry_models import Package, User, TokenInfo
 from urllib.parse import urlparse
 
 import requests
@@ -75,6 +75,8 @@ class RegistryStorage:
     def __init__(self):
         """Initialize empty package storage."""
         self.packages: Dict[str, Package] = {}
+        self.users: Dict[str, User] = {}  # username -> User
+        self.tokens: Dict[str, TokenInfo] = {}  # token -> TokenInfo
         self._activity_log: deque[dict] = deque(maxlen=1024)
         self._log_entries: deque[dict] = deque(maxlen=2048)
         self._lock = Lock()
@@ -95,13 +97,21 @@ class RegistryStorage:
         - Activity logs
         - Log entries
 
+        IMPORTANT: Users and tokens are NOT cleared during reset, as authentication
+        state should persist across registry resets. This matches the original
+        behavior where _valid_tokens persisted across resets.
+
         This method is thread-safe and ensures complete cleanup.
         """
         with self._lock:
-            # Create a new empty dict to ensure complete reset
+            # Only clear packages and logs, NOT users/tokens
             self.packages = {}
             self._activity_log.clear()
             self._log_entries.clear()
+
+            # Ensure default admin exists (in case storage was freshly initialized)
+            if "ece30861defaultadminuser" not in self.users:
+                self._create_default_admin()
 
     def create_package(self, package: Package) -> Package:
         """Store a new package.
@@ -554,6 +564,172 @@ class RegistryStorage:
         if source:
             suffix = f" (source: {source})"
         return f"{prefix} '{name}' v{version}{suffix}"
+
+    # User management ---------------------------------------------------------
+    def _create_default_admin(self) -> None:
+        """Create the default admin user required by autograder.
+
+        This is called during reset() to ensure the default admin always exists.
+        Password is specified by the Phase 2 requirements.
+        """
+        import uuid
+        from auth import hash_password, generate_token
+
+        # Default admin credentials from Phase 2 spec
+        default_username = "ece30861defaultadminuser"
+        default_password = "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE packages;"
+
+        # Create default admin user with all permissions
+        default_user = User(
+            user_id=str(uuid.uuid4()),
+            username=default_username,
+            password_hash=hash_password(default_password),
+            permissions=["upload", "search", "download", "admin"],
+            is_admin=True,
+            created_at=datetime.now(timezone.utc),
+        )
+
+        self.users[default_username] = default_user
+
+        # Create default token (bearer default-admin-token)
+        default_token = "default-admin-token"
+        token_info = TokenInfo(
+            token=default_token,
+            user_id=default_user.user_id,
+            username=default_username,
+            created_at=datetime.now(timezone.utc),
+            usage_count=0,
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=10),
+        )
+        self.tokens[default_token] = token_info
+
+    def create_user(self, user: User) -> User:
+        """Create a new user.
+
+        Args:
+            user: User object to store
+
+        Returns:
+            User: The stored user
+        """
+        with self._lock:
+            self.users[user.username] = user
+        return user
+
+    def get_user(self, username: str) -> Optional[User]:
+        """Get user by username.
+
+        Args:
+            username: Username to look up
+
+        Returns:
+            Optional[User]: User if found, None otherwise
+        """
+        return self.users.get(username)
+
+    def get_user_by_id(self, user_id: str) -> Optional[User]:
+        """Get user by user ID.
+
+        Args:
+            user_id: User ID to look up
+
+        Returns:
+            Optional[User]: User if found, None otherwise
+        """
+        for user in self.users.values():
+            if user.user_id == user_id:
+                return user
+        return None
+
+    def delete_user(self, username: str) -> Optional[User]:
+        """Delete a user and invalidate their tokens.
+
+        Args:
+            username: Username to delete
+
+        Returns:
+            Optional[User]: Deleted user if found, None otherwise
+        """
+        with self._lock:
+            user = self.users.pop(username, None)
+            if user:
+                # Invalidate all tokens for this user
+                tokens_to_delete = [
+                    token for token, info in self.tokens.items()
+                    if info.user_id == user.user_id
+                ]
+                for token in tokens_to_delete:
+                    del self.tokens[token]
+            return user
+
+    def list_users(self) -> List[User]:
+        """List all users.
+
+        Returns:
+            List[User]: All registered users
+        """
+        return list(self.users.values())
+
+    # Token management --------------------------------------------------------
+    def create_token(self, token_info: TokenInfo) -> TokenInfo:
+        """Store a new authentication token.
+
+        Args:
+            token_info: TokenInfo object to store
+
+        Returns:
+            TokenInfo: The stored token info
+        """
+        with self._lock:
+            self.tokens[token_info.token] = token_info
+        return token_info
+
+    def get_token(self, token: str) -> Optional[TokenInfo]:
+        """Get token info by token string.
+
+        Args:
+            token: Token string to look up
+
+        Returns:
+            Optional[TokenInfo]: Token info if found and not expired, None otherwise
+        """
+        token_info = self.tokens.get(token)
+        if token_info and token_info.is_expired():
+            # Remove expired token
+            with self._lock:
+                self.tokens.pop(token, None)
+            return None
+        return token_info
+
+    def increment_token_usage(self, token: str) -> bool:
+        """Increment usage count for a token.
+
+        Args:
+            token: Token to increment
+
+        Returns:
+            bool: True if successful, False if token not found or expired
+        """
+        token_info = self.get_token(token)
+        if not token_info:
+            return False
+
+        with self._lock:
+            token_info.increment_usage()
+
+        return True
+
+    def invalidate_token(self, token: str) -> bool:
+        """Invalidate (delete) a token.
+
+        Args:
+            token: Token to invalidate
+
+        Returns:
+            bool: True if token was found and deleted, False otherwise
+        """
+        with self._lock:
+            return self.tokens.pop(token, None) is not None
 
 
 storage = RegistryStorage()
