@@ -180,15 +180,31 @@ def package_to_artifact(package: Package, artifact_type: Optional[str] = None) -
 
     # Generate download_url - per OpenAPI spec, server should generate this
     # Use the package download endpoint with the package ID
+    # Generate full absolute download URL pointing to the package download endpoint
+    # Format: https://<host>/packages/<package_id>/download
     try:
-        # Generate download URL pointing to the package download endpoint
-        # Format: /packages/<package_id>/download
-        download_url = f"/packages/{package.id}/download"
-        artifact_data["download_url"] = download_url
-    except Exception:
-        # If URL generation fails, only include if already in metadata
-        if "download_url" in package.metadata:
-            artifact_data["download_url"] = package.metadata["download_url"]
+        # Try to use url_for for proper URL generation (preferred method)
+        download_url = url_for('download_package', package_id=package.id, _external=True)
+    except (RuntimeError, KeyError):
+        # If url_for fails (e.g., outside request context), use request.url_root
+        # This handles cases where we're generating URLs outside a request context
+        try:
+            if request and hasattr(request, 'url_root'):
+                base_url = request.url_root.rstrip('/')
+                download_url = f"{base_url}/packages/{package.id}/download"
+            else:
+                # Fallback: use relative URL (shouldn't happen in normal operation)
+                download_url = f"/packages/{package.id}/download"
+        except Exception:
+            # If all else fails, check if download_url is in metadata
+            if "download_url" in package.metadata:
+                download_url = package.metadata["download_url"]
+            else:
+                # Last resort: relative URL
+                download_url = f"/packages/{package.id}/download"
+    
+    # Always include download_url in the response per OpenAPI spec
+    artifact_data["download_url"] = download_url
 
     return {
         "metadata": package_to_artifact_metadata(package, artifact_type),
@@ -1245,6 +1261,7 @@ def list_artifacts():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/artifacts/<artifact_type>/<artifact_id>", methods=["GET"])
 @app.route("/api/artifacts/<artifact_type>/<artifact_id>", methods=["GET"])
 def get_artifact(artifact_type, artifact_id):
     """Retrieve artifact by type and ID.
@@ -1859,6 +1876,46 @@ def check_artifact_license(artifact_id):
         return jsonify({"error": str(e)}), 502
 
 
+@app.route("/artifact/byName/<name>", methods=["GET"])
+@app.route("/api/artifact/byName/<name>", methods=["GET"])
+def get_artifacts_by_name(name):
+    """List artifact metadata for this name.
+
+    Returns metadata for each artifact matching this name.
+
+    Args:
+        name: Artifact name to search for
+
+    Returns:
+        tuple: (Array of ArtifactMetadata, 200) or error response
+    """
+    # Check auth
+    is_valid, error_response = check_auth_header()
+    if not is_valid:
+        return error_response
+
+    # Validate name
+    if not name or not isinstance(name, str):
+        return jsonify({"error": "Invalid artifact name"}), 400
+
+    # Search for packages with matching name (exact match)
+    matching_packages = []
+    for package in storage.packages.values():
+        if package.name == name:
+            matching_packages.append(package)
+
+    if not matching_packages:
+        return jsonify({"error": "No such artifact"}), 404
+
+    # Convert to ArtifactMetadata array
+    artifacts = []
+    for package in matching_packages:
+        pkg_type = infer_artifact_type(package)
+        artifacts.append(package_to_artifact_metadata(package, pkg_type))
+
+    return jsonify(artifacts), 200
+
+
 @app.route("/api/artifact/byRegEx", methods=["POST"])
 def search_artifacts_by_regex():
     """Search artifacts by regex pattern.
@@ -1924,7 +1981,7 @@ def ingest_page():
 
 
 @app.route("/dashboard/health", methods=["GET"])
-@app.route("/health", methods=["GET"])
+@app.route("/health/dashboard", methods=["GET"])
 def health_dashboard_redirect():
     """Backward-compatible alias for the health dashboard route."""
     return render_template("health.html")
