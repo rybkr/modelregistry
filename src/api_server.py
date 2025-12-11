@@ -123,7 +123,7 @@ def initialize_default_admin_user():
         password_hash=hash_password(DEFAULT_PASSWORD),
         permissions=["upload", "search", "download", "admin"],
         is_admin=True,
-        created_at=datetime.now(timezone.utc)
+        created_at=datetime.now(timezone.utc),
     )
     storage.create_user(default_user)
     logger.info(f"Created default admin user: {DEFAULT_USERNAME}")
@@ -225,7 +225,11 @@ def check_permission(user_info: dict, required_permission: str) -> tuple:
     """
     if not user_info:
         return False, (
-            jsonify({"error": "Authentication failed due to invalid or missing AuthenticationToken"}),
+            jsonify(
+                {
+                    "error": "Authentication failed due to invalid or missing AuthenticationToken"
+                }
+            ),
             403,
         )
 
@@ -239,7 +243,9 @@ def check_permission(user_info: dict, required_permission: str) -> tuple:
         return True, None
 
     # Permission denied
-    logger.warning(f"Permission denied: user={user_info.get('username')} lacks '{required_permission}' permission")
+    logger.warning(
+        f"Permission denied: user={user_info.get('username')} lacks '{required_permission}' permission"
+    )
     return False, (
         jsonify({"error": f"You do not have permission to {required_permission}"}),
         403,
@@ -1168,6 +1174,7 @@ def get_model_rating(artifact_id):
     )
 
     tree_score_latency = time.perf_counter() - tree_score_start
+    print("TREEEEEEEEEE", tree_score_val)
 
     reproducibility_val = 0.0
     reproducibility_latency = 0.0
@@ -1454,414 +1461,6 @@ def get_artifact_cost(artifact_type, artifact_id):
         ), 500
 
 
-def _find_base_model_package(
-    base_model_path: str, all_packages: list[Package]
-) -> Optional[Package]:
-    """Find a package that matches the base_model_path.
-
-    Args:
-        base_model_path: Path or identifier from config.json (_name_or_path or base_model)
-        all_packages: List of all packages in storage
-
-    Returns:
-        Matching Package if found, None otherwise
-    """
-    if not base_model_path:
-        print(f"[LINEAGE DEBUG] _find_base_model_package: base_model_path is empty")
-        return None
-
-    base_model_id = base_model_path
-    if "huggingface.co" in base_model_path.lower():
-        parsed = urlparse(base_model_path)
-        path_parts = [x for x in parsed.path.strip("/").split("/") if x]
-        if len(path_parts) >= 2:
-            base_model_id = f"{path_parts[0]}/{path_parts[1]}"
-        elif len(path_parts) == 1:
-            base_model_id = path_parts[0]
-    elif "/" in base_model_path:
-        base_model_id = base_model_path
-    else:
-        base_model_id = base_model_path
-
-    print(
-        f"[LINEAGE DEBUG] _find_base_model_package: Searching for base_model_path='{base_model_path}', extracted base_model_id='{base_model_id}'"
-    )
-
-    for pkg in all_packages:
-        # Only match models, not datasets or code
-        if pkg.artifact_type != "model":
-            continue
-
-        pkg_url = pkg.metadata.get("url", "")
-        pkg_name = pkg.name.lower()
-
-        pkg_model_id = None
-        if pkg_url and "huggingface.co" in pkg_url.lower():
-            parsed = urlparse(pkg_url)
-            path_parts = [x for x in parsed.path.strip("/").split("/") if x]
-            # Skip datasets and spaces in URL path
-            if path_parts and path_parts[0] in {"datasets", "spaces"}:
-                continue
-            if len(path_parts) >= 2:
-                pkg_model_id = f"{path_parts[0]}/{path_parts[1]}"
-            elif len(path_parts) == 1:
-                pkg_model_id = path_parts[0]
-
-        if pkg_model_id and base_model_id.lower() == pkg_model_id.lower():
-            print(
-                f"[LINEAGE DEBUG] _find_base_model_package: Found match by pkg_model_id - pkg.id={pkg.id}, pkg.name={pkg.name}, pkg.url={pkg_url}"
-            )
-            return pkg
-
-        if "/" not in base_model_id and pkg_name and base_model_id.lower() == pkg_name:
-            print(
-                f"[LINEAGE DEBUG] _find_base_model_package: Found match by pkg_name - pkg.id={pkg.id}, pkg.name={pkg.name}, pkg.url={pkg_url}"
-            )
-            return pkg
-
-        base_model_name = (
-            base_model_id.split("/")[-1].lower()
-            if "/" in base_model_id
-            else base_model_id.lower()
-        )
-        if (
-            pkg_url
-            and base_model_name in pkg_url.lower()
-            and "huggingface.co" in pkg_url.lower()
-            and "datasets" not in pkg_url.lower()
-            and "spaces" not in pkg_url.lower()
-        ):
-            if base_model_name in pkg_url.lower().split("/")[-1]:
-                print(
-                    f"[LINEAGE DEBUG] _find_base_model_package: Found match by base_model_name in URL - pkg.id={pkg.id}, pkg.name={pkg.name}, pkg.url={pkg_url}"
-                )
-                return pkg
-
-    print(
-        f"[LINEAGE DEBUG] _find_base_model_package: No matching package found for base_model_path='{base_model_path}' (base_model_id='{base_model_id}')"
-    )
-    return None
-
-
-def _find_dataset_package(
-    dataset_name: str, all_packages: list[Package]
-) -> Optional[Package]:
-    """Find a package that matches the dataset_name.
-
-    Args:
-        dataset_name: Dataset identifier from config.json (dataset or train_dataset)
-        all_packages: List of all packages in storage
-
-    Returns:
-        Matching Package if found, None otherwise
-    """
-    if not dataset_name:
-        print(f"[LINEAGE DEBUG] _find_dataset_package: dataset_name is empty")
-        return None
-
-    dataset_id = dataset_name
-    if "huggingface.co" in dataset_name.lower():
-        parsed = urlparse(dataset_name)
-        path_parts = [x for x in parsed.path.strip("/").split("/") if x]
-        if path_parts and path_parts[0] == "datasets":
-            path_parts = path_parts[1:]
-        if len(path_parts) >= 2:
-            dataset_id = f"{path_parts[0]}/{path_parts[1]}"
-        elif len(path_parts) == 1:
-            dataset_id = path_parts[0]
-
-    print(
-        f"[LINEAGE DEBUG] _find_dataset_package: Searching for dataset_name='{dataset_name}', extracted dataset_id='{dataset_id}'"
-    )
-
-    for pkg in all_packages:
-        # Only match datasets
-        if pkg.artifact_type != "dataset":
-            continue
-
-        pkg_url = pkg.metadata.get("url", "")
-        pkg_name = pkg.name.lower()
-
-        if "huggingface.co/datasets/" in pkg_url.lower():
-            parsed = urlparse(pkg_url)
-            path_parts = [x for x in parsed.path.strip("/").split("/") if x]
-            if path_parts and path_parts[0] == "datasets":
-                path_parts = path_parts[1:]
-            pkg_dataset_id = None
-            if len(path_parts) >= 2:
-                pkg_dataset_id = f"{path_parts[0]}/{path_parts[1]}"
-            elif len(path_parts) == 1:
-                pkg_dataset_id = path_parts[0]
-
-            dataset_id_lower = dataset_id.lower()
-            if pkg_dataset_id and dataset_id_lower == pkg_dataset_id.lower():
-                print(
-                    f"[LINEAGE DEBUG] _find_dataset_package: Found match - pkg.id={pkg.id}, pkg.name={pkg.name}, pkg.url={pkg_url}"
-                )
-                return pkg
-
-            if "/" not in dataset_id and dataset_id_lower == pkg_name:
-                print(
-                    f"[LINEAGE DEBUG] _find_dataset_package: Found match by name - pkg.id={pkg.id}, pkg.name={pkg.name}, pkg.url={pkg_url}"
-                )
-                return pkg
-
-    print(
-        f"[LINEAGE DEBUG] _find_dataset_package: No matching package found for dataset_name='{dataset_name}' (dataset_id='{dataset_id}')"
-    )
-    return None
-
-
-def _build_lineage_graph_recursive(
-    model_id: str,
-    nodes: list,
-    edges: list,
-    node_ids: set,
-    edge_set: set,
-    visited: set,
-    all_packages: list[Package],
-    depth: int = 0,
-):
-    """Recursively build lineage graph by traversing all parent dependencies.
-
-    This function MUST descend all parent nodes no matter how deep the chain goes.
-
-    Args:
-        model_id: ID of the model to process
-        nodes: List of lineage nodes (mutated in place)
-        edges: List of lineage edges (mutated in place)
-        node_ids: Set of node IDs already added (mutated in place)
-        edge_set: Set of edges already added: (from_id, to_id, relationship) (mutated in place)
-        visited: Set of model IDs already processed (for cycle detection)
-        all_packages: List of all packages in storage
-        depth: Current recursion depth (for debugging)
-    """
-    indent = "  " * depth
-    # Skip if already visited (cycle detection)
-    if model_id in visited:
-        print(
-            f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Skipping model_id={model_id} (already visited - cycle detected)"
-        )
-        return
-
-    # Mark as visited
-    visited.add(model_id)
-    print(
-        f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Processing model_id={model_id}, visited set now has {len(visited)} models"
-    )
-
-    # Get the package
-    package = storage.get_package(model_id)
-    if not package:
-        print(
-            f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Package not found for model_id={model_id}"
-        )
-        return
-
-    url = package.metadata.get("url", "")
-    if not url:
-        print(
-            f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): No URL for model_id={model_id}, name={package.name}"
-        )
-        return
-
-    print(
-        f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Processing model_id={model_id}, name={package.name}, url={url}"
-    )
-
-    try:
-        model = Model(model=ModelResource(url=url))
-
-        # Try to read config.json to extract lineage information
-        try:
-            with model.model.open_files(allow_patterns=["config.json"]) as repo:
-                if not repo.exists("config.json"):
-                    print(
-                        f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): config.json not found for model_id={model_id} - no further parents to process"
-                    )
-                    return
-
-                config = repo.read_json("config.json")
-                print(
-                    f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Read config.json for model_id={model_id}"
-                )
-                print(
-                    f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Full config.json keys: {list(config.keys())}"
-                )
-
-                # Extract base model information
-                base_model_path = None
-                if "_name_or_path" in config:
-                    base_model_path = config["_name_or_path"]
-                    print(
-                        f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Found _name_or_path='{base_model_path}' in config for model_id={model_id}"
-                    )
-                elif "base_model" in config:
-                    base_model_path = config["base_model"]
-                    print(
-                        f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Found base_model='{base_model_path}' in config for model_id={model_id}"
-                    )
-                else:
-                    print(
-                        f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): No base_model or _name_or_path in config for model_id={model_id} - this model has no parent, stopping recursion at this branch"
-                    )
-                    # Check for other potential dependency fields
-                    for key in [
-                        "model_type",
-                        "architectures",
-                        "parent",
-                        "pretrained_model",
-                    ]:
-                        if key in config:
-                            print(
-                                f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Found other key '{key}'='{config[key]}' in config for model_id={model_id}"
-                            )
-
-                # Find and process base model parent
-                if base_model_path:
-                    found_parent = _find_base_model_package(
-                        base_model_path, all_packages
-                    )
-
-                    if found_parent:
-                        parent_id = found_parent.id
-                        print(
-                            f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Found parent model_id={parent_id}, name={found_parent.name} for child model_id={model_id}"
-                        )
-
-                        # Add parent node if not already present
-                        if parent_id not in node_ids:
-                            parent_node = {
-                                "artifact_id": parent_id,
-                                "name": found_parent.name,
-                                "source": "config_json",
-                            }
-                            nodes.append(parent_node)
-                            node_ids.add(parent_id)
-                            print(
-                                f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Added parent node: artifact_id={parent_id}, name={found_parent.name}"
-                            )
-                        else:
-                            print(
-                                f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Parent node already exists: artifact_id={parent_id}"
-                            )
-
-                        # Add edge from parent to current model
-                        edge_key = (parent_id, model_id, "base_model")
-                        if edge_key not in edge_set:
-                            edge = {
-                                "from_node_artifact_id": parent_id,
-                                "to_node_artifact_id": model_id,
-                                "relationship": "base_model",
-                            }
-                            edges.append(edge)
-                            edge_set.add(edge_key)
-                            print(
-                                f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Added edge: {parent_id} -> {model_id} (base_model)"
-                            )
-                        else:
-                            print(
-                                f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Edge already exists: {parent_id} -> {model_id} (base_model)"
-                            )
-
-                        # Recursively process parent's dependencies - THIS IS CRITICAL: we must descend ALL parents no matter how deep
-                        print(
-                            f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Recursively descending into parent model_id={parent_id} (depth will be {depth + 1})"
-                        )
-                        _build_lineage_graph_recursive(
-                            parent_id,
-                            nodes,
-                            edges,
-                            node_ids,
-                            edge_set,
-                            visited,
-                            all_packages,
-                            depth + 1,
-                        )
-                        print(
-                            f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Finished processing parent model_id={parent_id}, continuing with other dependencies"
-                        )
-                    else:
-                        print(
-                            f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): No parent found for base_model_path='{base_model_path}' in model_id={model_id} (parent not in registry)"
-                        )
-
-                # Extract and process dataset dependencies (no recursion for datasets)
-                dataset_name = None
-                if "dataset" in config:
-                    dataset_name = config["dataset"]
-                    print(
-                        f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Found dataset='{dataset_name}' in config for model_id={model_id}"
-                    )
-                elif "train_dataset" in config:
-                    dataset_name = config["train_dataset"]
-                    print(
-                        f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Found train_dataset='{dataset_name}' in config for model_id={model_id}"
-                    )
-
-                if dataset_name:
-                    found_dataset = _find_dataset_package(dataset_name, all_packages)
-
-                    if found_dataset:
-                        dataset_id = found_dataset.id
-                        print(
-                            f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Found dataset model_id={dataset_id}, name={found_dataset.name} for model_id={model_id}"
-                        )
-
-                        # Add dataset node if not already present
-                        if dataset_id not in node_ids:
-                            dataset_node = {
-                                "artifact_id": dataset_id,
-                                "name": found_dataset.name,
-                                "source": "upstream_dataset",
-                            }
-                            nodes.append(dataset_node)
-                            node_ids.add(dataset_id)
-                            print(
-                                f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Added dataset node: artifact_id={dataset_id}, name={found_dataset.name}"
-                            )
-                        else:
-                            print(
-                                f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Dataset node already exists: artifact_id={dataset_id}"
-                            )
-
-                        # Add edge from dataset to current model
-                        edge_key = (dataset_id, model_id, "fine_tuning_dataset")
-                        if edge_key not in edge_set:
-                            edge = {
-                                "from_node_artifact_id": dataset_id,
-                                "to_node_artifact_id": model_id,
-                                "relationship": "fine_tuning_dataset",
-                            }
-                            edges.append(edge)
-                            edge_set.add(edge_key)
-                            print(
-                                f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Added edge: {dataset_id} -> {model_id} (fine_tuning_dataset)"
-                            )
-                        else:
-                            print(
-                                f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Edge already exists: {dataset_id} -> {model_id} (fine_tuning_dataset)"
-                            )
-                    else:
-                        print(
-                            f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): No dataset found for dataset_name='{dataset_name}' in model_id={model_id}"
-                        )
-
-        except Exception as e:
-            print(
-                f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Could not read config.json for model {model_id}: {str(e)}"
-            )
-
-    except Exception as e:
-        print(
-            f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Error processing model {model_id} for lineage: {str(e)}"
-        )
-
-    print(
-        f"[LINEAGE DEBUG]{indent} _build_lineage_graph_recursive (depth={depth}): Completed processing model_id={model_id}, returning to parent caller"
-    )
-
-
 @app.route("/api/artifact/model/<artifact_id>/lineage", methods=["GET"])
 def get_artifact_lineage(artifact_id):
     """Get lineage graph for model artifact.
@@ -1888,81 +1487,25 @@ def get_artifact_lineage(artifact_id):
         return jsonify({"error": "No URL in package metadata"}), 400
 
     try:
-        nodes = []
-        edges = []
-
-        # Track nodes by artifact_id to prevent duplicates and enable fast lookup
-        node_ids = set()
-        # Track edges to prevent duplicates: (from_id, to_id, relationship)
-        edge_set = set()
-        # Track visited models for cycle detection
-        visited = set()
-
-        # Add current model as a node
-        current_node = {
-            "artifact_id": artifact_id,
-            "name": package.name,
-            "source": "config_json",
-        }
-        nodes.append(current_node)
-        node_ids.add(artifact_id)
-        print(
-            f"[LINEAGE DEBUG] get_artifact_lineage: Starting lineage for artifact_id={artifact_id}, name={package.name}"
-        )
-        print(
-            f"[LINEAGE DEBUG] get_artifact_lineage: Added initial node: artifact_id={artifact_id}, name={package.name}"
-        )
-
-        # Get all packages once for efficiency
+        # Get all packages for lineage graph construction
         all_packages = storage.list_packages(offset=0, limit=10000)
-        print(
-            f"[LINEAGE DEBUG] get_artifact_lineage: Loaded {len(all_packages)} total packages from storage"
-        )
 
-        # Recursively build complete lineage graph including all transitive dependencies
-        # NOTE: We MUST descend all parent nodes no matter how deep - this is required by the spec
-        print(
-            f"[LINEAGE DEBUG] get_artifact_lineage: Starting recursive traversal from artifact_id={artifact_id} (depth=0)"
-        )
-        _build_lineage_graph_recursive(
+        # Build lineage graph using the function from lineage.py
+        lineage = build_lineage_graph(
             artifact_id,
-            nodes,
-            edges,
-            node_ids,
-            edge_set,
-            visited,
             all_packages,
-            depth=0,
+            load_config_from_repo,
         )
-
-        # Ensure all nodes referenced in edges exist
-        edge_node_ids = set()
-        for edge in edges:
-            edge_node_ids.add(edge["from_node_artifact_id"])
-            edge_node_ids.add(edge["to_node_artifact_id"])
-
-        # Verify all edge-referenced nodes exist
-        missing_nodes = edge_node_ids - node_ids
-        if missing_nodes:
-            print(
-                f"[LINEAGE DEBUG] get_artifact_lineage: WARNING - Lineage edges reference missing nodes: {missing_nodes}"
-            )
-
-        print(f"[LINEAGE DEBUG] get_artifact_lineage: Lineage graph complete:")
-        print(f"[LINEAGE DEBUG]   - Total nodes: {len(nodes)}")
-        print(f"[LINEAGE DEBUG]   - Total edges: {len(edges)}")
-        print(f"[LINEAGE DEBUG]   - Node IDs: {sorted(node_ids)}")
-        print(
-            f"[LINEAGE DEBUG]   - Edges: {[(e['from_node_artifact_id'], e['to_node_artifact_id'], e['relationship']) for e in edges]}"
-        )
-
-        lineage = {"nodes": nodes, "edges": edges}
 
         return jsonify(lineage), 200
 
     except Exception as e:
         logger.error(f"Error building lineage graph: {str(e)}")
-        return jsonify({"error": f"Failed to build lineage graph: {str(e)}"}), 400
+        return jsonify(
+            {
+                "error": "The lineage graph cannot be computed because the artifact metadata is missing or malformed."
+            }
+        ), 400
 
 
 @app.route("/api/artifact/model/<artifact_id>/license-check", methods=["POST"])
@@ -2064,13 +1607,17 @@ def mark_model_sensitive(artifact_id):
 
     storage.update_package(package)
 
-    logger.info(f"Model '{package.name}' (ID: {artifact_id}) marked as sensitive={is_sensitive} by '{user_info['username']}'")
+    logger.info(
+        f"Model '{package.name}' (ID: {artifact_id}) marked as sensitive={is_sensitive} by '{user_info['username']}'"
+    )
 
-    return jsonify({
-        "message": f"Model marked as {'sensitive' if is_sensitive else 'not sensitive'}",
-        "is_sensitive": is_sensitive,
-        "has_monitoring_script": bool(monitoring_script)
-    }), 200
+    return jsonify(
+        {
+            "message": f"Model marked as {'sensitive' if is_sensitive else 'not sensitive'}",
+            "is_sensitive": is_sensitive,
+            "has_monitoring_script": bool(monitoring_script),
+        }
+    ), 200
 
 
 @app.route("/api/artifact/model/<artifact_id>/sensitive", methods=["GET"])
@@ -2102,10 +1649,9 @@ def get_model_sensitive_status(artifact_id):
     is_sensitive = package.metadata.get("is_sensitive", False)
     monitoring_script = package.metadata.get("monitoring_script", "")
 
-    return jsonify({
-        "is_sensitive": is_sensitive,
-        "monitoring_script": monitoring_script
-    }), 200
+    return jsonify(
+        {"is_sensitive": is_sensitive, "monitoring_script": monitoring_script}
+    ), 200
 
 
 @app.route("/api/artifact/model/<artifact_id>/sensitive", methods=["DELETE"])
@@ -2141,7 +1687,9 @@ def delete_model_sensitive_status(artifact_id):
 
     storage.update_package(package)
 
-    logger.info(f"Model '{package.name}' (ID: {artifact_id}) sensitive status removed by '{user_info['username']}'")
+    logger.info(
+        f"Model '{package.name}' (ID: {artifact_id}) sensitive status removed by '{user_info['username']}'"
+    )
 
     return jsonify({"message": "Sensitive status removed"}), 200
 
@@ -2885,7 +2433,9 @@ def download_artifact(artifact_name):
 
             try:
                 # Create temporary file for the script
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.js', delete=False) as script_file:
+                with tempfile.NamedTemporaryFile(
+                    mode="w", suffix=".js", delete=False
+                ) as script_file:
                     script_file.write(monitoring_script)
                     script_path = script_file.name
 
@@ -2893,15 +2443,26 @@ def download_artifact(artifact_name):
                 model_name = package.name
                 uploader_username = package.uploaded_by
                 downloader_username = user_info.get("username", "unknown")
-                zip_file_path = package.metadata.get("url", "")  # Use URL as placeholder
+                zip_file_path = package.metadata.get(
+                    "url", ""
+                )  # Use URL as placeholder
 
                 # Execute the script with Node.js
-                logger.info(f"Executing monitoring script for sensitive model '{model_name}'")
+                logger.info(
+                    f"Executing monitoring script for sensitive model '{model_name}'"
+                )
                 result = subprocess.run(
-                    ['node', script_path, model_name, uploader_username, downloader_username, zip_file_path],
+                    [
+                        "node",
+                        script_path,
+                        model_name,
+                        uploader_username,
+                        downloader_username,
+                        zip_file_path,
+                    ],
                     capture_output=True,
                     text=True,
-                    timeout=30  # 30 second timeout
+                    timeout=30,  # 30 second timeout
                 )
 
                 # Clean up temp file
@@ -2909,14 +2470,24 @@ def download_artifact(artifact_name):
 
                 # Check exit code
                 if result.returncode != 0:
-                    logger.warning(f"Monitoring script rejected download of '{model_name}' for user '{downloader_username}'")
-                    error_msg = result.stdout.strip() if result.stdout else "Download rejected by monitoring script"
-                    return jsonify({
-                        "error": f"Download rejected: {error_msg}",
-                        "monitoring_output": result.stdout
-                    }), 403
+                    logger.warning(
+                        f"Monitoring script rejected download of '{model_name}' for user '{downloader_username}'"
+                    )
+                    error_msg = (
+                        result.stdout.strip()
+                        if result.stdout
+                        else "Download rejected by monitoring script"
+                    )
+                    return jsonify(
+                        {
+                            "error": f"Download rejected: {error_msg}",
+                            "monitoring_output": result.stdout,
+                        }
+                    ), 403
 
-                logger.info(f"Monitoring script approved download of '{model_name}' for user '{downloader_username}'")
+                logger.info(
+                    f"Monitoring script approved download of '{model_name}' for user '{downloader_username}'"
+                )
 
             except subprocess.TimeoutExpired:
                 logger.error(f"Monitoring script timeout for model '{model_name}'")
@@ -2925,10 +2496,12 @@ def download_artifact(artifact_name):
                 return jsonify({"error": "Monitoring script timeout"}), 500
             except FileNotFoundError:
                 logger.error("Node.js not found - cannot execute monitoring script")
-                return jsonify({"error": "Node.js not available for monitoring script execution"}), 500
+                return jsonify(
+                    {"error": "Node.js not available for monitoring script execution"}
+                ), 500
             except Exception as e:
                 logger.error(f"Error executing monitoring script: {str(e)}")
-                if 'script_path' in locals() and os.path.exists(script_path):
+                if "script_path" in locals() and os.path.exists(script_path):
                     os.unlink(script_path)
                 return jsonify({"error": f"Monitoring script error: {str(e)}"}), 500
 
@@ -2939,17 +2512,21 @@ def download_artifact(artifact_name):
 
         download_record = {
             "username": user_info.get("username", "unknown"),
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         package.metadata["download_history"].append(download_record)
         storage.update_package(package)
 
-        logger.info(f"Recorded download of sensitive model '{package.name}' by '{user_info['username']}'")
+        logger.info(
+            f"Recorded download of sensitive model '{package.name}' by '{user_info['username']}'"
+        )
 
     # Return download URL or redirect
     download_url = package.metadata.get("url", "")
     if download_url:
-        logger.info(f"Artifact '{artifact_name}' downloaded by '{user_info['username']}'")
+        logger.info(
+            f"Artifact '{artifact_name}' downloaded by '{user_info['username']}'"
+        )
         return jsonify({"download_url": download_url}), 200
     else:
         return jsonify({"error": "No download URL available for this artifact"}), 404
