@@ -9,15 +9,6 @@ from api_server import app
 from storage import storage
 
 
-@pytest.fixture
-def client():
-    app.config["TESTING"] = True
-    with app.test_client() as client:
-        storage.reset()  # Reset before each test
-        yield client
-        storage.reset()  # Reset after each test
-
-
 def test_upload_csv_file_success(client):
     """Test successful CSV file upload with valid data."""
     csv_content = """name,version,metadata

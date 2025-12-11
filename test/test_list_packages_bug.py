@@ -13,15 +13,6 @@ from datetime import datetime, timezone
 
 
 @pytest.fixture
-def client():
-    app.config["TESTING"] = True
-    with app.test_client() as client:
-        storage.reset()
-        yield client
-        storage.reset()
-
-
-@pytest.fixture
 def sample_packages(client):
     """Create sample packages for testing."""
     packages = [

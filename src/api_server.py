@@ -80,6 +80,34 @@ def initialize_default_token():
     _valid_tokens.add(DEFAULT_TOKEN)
 
 
+def initialize_default_admin_user():
+    """Initialize the default admin user in storage.
+
+    Creates the default admin user with all permissions if it doesn't already exist.
+    This ensures the autograder and other tools can authenticate with the default credentials.
+    """
+    from auth import hash_password
+    from registry_models import User
+
+    # Check if default user already exists
+    existing_user = storage.get_user(DEFAULT_USERNAME)
+    if existing_user:
+        logger.info("Default admin user already exists")
+        return
+
+    # Create default admin user with all permissions
+    default_user = User(
+        user_id=str(uuid.uuid4()),
+        username=DEFAULT_USERNAME,
+        password_hash=hash_password(DEFAULT_PASSWORD),
+        permissions=["upload", "search", "download", "admin"],
+        is_admin=True,
+        created_at=datetime.now(timezone.utc)
+    )
+    storage.create_user(default_user)
+    logger.info(f"Created default admin user: {DEFAULT_USERNAME}")
+
+
 def check_auth_header():
     """Check if X-Authorization header is present and token is valid.
 
@@ -2591,6 +2619,7 @@ def download_artifact(artifact_name):
 
 if __name__ == "__main__":
     initialize_default_token()
+    initialize_default_admin_user()
     # Read port from environment variable (AWS EB sets this) or default to 8000
     port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port, debug=True)

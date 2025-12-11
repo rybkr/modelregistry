@@ -16,15 +16,6 @@ from storage import storage
 
 
 @pytest.fixture
-def client():
-    app.config["TESTING"] = True
-    with app.test_client() as client:
-        storage.reset()
-        yield client
-        storage.reset()
-
-
-@pytest.fixture
 def mock_model_resource():
     """Create a mock ModelResource and Model for testing."""
     with (
