@@ -3,6 +3,7 @@ from flask_cors import CORS
 from typing import Optional
 from datetime import datetime, timezone
 from urllib.parse import urlparse, quote
+from lineage import build_lineage_graph, compute_tree_score
 
 import uuid
 import os
@@ -13,6 +14,7 @@ import logging
 import zipfile
 import tempfile
 import re
+import time
 
 from registry_models import Package
 from storage import storage
@@ -34,6 +36,25 @@ STATIC_DIR = os.path.join(SRC_DIR, "static")
 
 app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
 CORS(app)
+
+
+def load_config_from_repo(package):
+    """Safely load config.json from a model repo. Returns dict or None."""
+    try:
+        url = package.metadata.get("url", "")
+        if not url:
+            return None
+
+        model = Model(model=ModelResource(url=url))
+
+        with model.model.open_files(allow_patterns=["config.json"]) as repo:
+            if repo.exists("config.json"):
+                return repo.read_json("config.json")
+
+    except Exception as e:
+        logger.warning(f"Failed to load config.json for {package.id}: {e}")
+
+    return None
 
 
 # Register JSON error handler to ensure API endpoints always return JSON
@@ -102,7 +123,7 @@ def initialize_default_admin_user():
         password_hash=hash_password(DEFAULT_PASSWORD),
         permissions=["upload", "search", "download", "admin"],
         is_admin=True,
-        created_at=datetime.now(timezone.utc)
+        created_at=datetime.now(timezone.utc),
     )
     storage.create_user(default_user)
     logger.info(f"Created default admin user: {DEFAULT_USERNAME}")
@@ -126,14 +147,18 @@ def check_auth_header():
 
     if not auth_header:
         logger.warning("Auth failed: no X-Authorization header")
-        return False, (
-            jsonify(
-                {
-                    "error": "Authentication failed due to invalid or missing AuthenticationToken"
-                }
+        return (
+            False,
+            (
+                jsonify(
+                    {
+                        "error": "Authentication failed due to invalid or missing AuthenticationToken"
+                    }
+                ),
+                403,
             ),
-            403,
-        ), None
+            None,
+        )
 
     token_value = auth_header.strip().strip('"').strip("'")
 
@@ -147,7 +172,7 @@ def check_auth_header():
             "username": token_info.username,
             "user_id": token_info.user_id,
             "is_admin": user.is_admin if user else False,
-            "permissions": user.permissions if user else []
+            "permissions": user.permissions if user else [],
         }
         logger.info(f"Token valid (new system): user={token_info.username}")
         return True, None, user_info
@@ -162,21 +187,25 @@ def check_auth_header():
 
     if not is_default and not is_in_valid_set:
         logger.warning(f"Auth failed: token not recognized")
-        return False, (
-            jsonify(
-                {
-                    "error": "Authentication failed due to invalid or missing AuthenticationToken"
-                }
+        return (
+            False,
+            (
+                jsonify(
+                    {
+                        "error": "Authentication failed due to invalid or missing AuthenticationToken"
+                    }
+                ),
+                403,
             ),
-            403,
-        ), None
+            None,
+        )
 
     # Old system - assume default admin permissions
     user_info = {
         "username": DEFAULT_USERNAME,
         "user_id": "default",
         "is_admin": True,
-        "permissions": ["upload", "search", "download", "admin"]
+        "permissions": ["upload", "search", "download", "admin"],
     }
 
     return True, None, user_info
@@ -196,7 +225,11 @@ def check_permission(user_info: dict, required_permission: str) -> tuple:
     """
     if not user_info:
         return False, (
-            jsonify({"error": "Authentication failed due to invalid or missing AuthenticationToken"}),
+            jsonify(
+                {
+                    "error": "Authentication failed due to invalid or missing AuthenticationToken"
+                }
+            ),
             403,
         )
 
@@ -210,7 +243,9 @@ def check_permission(user_info: dict, required_permission: str) -> tuple:
         return True, None
 
     # Permission denied
-    logger.warning(f"Permission denied: user={user_info.get('username')} lacks '{required_permission}' permission")
+    logger.warning(
+        f"Permission denied: user={user_info.get('username')} lacks '{required_permission}' permission"
+    )
     return False, (
         jsonify({"error": f"You do not have permission to {required_permission}"}),
         403,
@@ -279,10 +314,10 @@ def package_to_artifact(package: Package, artifact_type: Optional[str] = None) -
     # Construct download_url in the format expected by autograder: {host}/download/{artifact_name}
     try:
         # Use request context to get the host and construct download URL
-        base_url = request.url_root.rstrip('/')
+        base_url = request.url_root.rstrip("/")
         # URL-encode package name, preserving hyphens but encoding other special chars
         artifact_name = package.name or ""
-        encoded_name = quote(artifact_name, safe='-') if artifact_name else ""
+        encoded_name = quote(artifact_name, safe="-") if artifact_name else ""
         artifact_data["download_url"] = f"{base_url}/download/{encoded_name}"
     except RuntimeError:
         # Fallback if request context is not available (e.g., in tests)
@@ -1117,11 +1152,32 @@ def get_model_rating(artifact_id):
             "aws_server": 1.0,
         }
 
-    # Missing metrics default to 0.0 (not implemented yet)
+    tree_score_start = time.perf_counter()
+
+    graph = build_lineage_graph(
+        artifact_id,
+        storage.list_packages(0, 10000),
+        load_config_from_repo,
+    )
+
+    tree_score_val = compute_tree_score(
+        artifact_id,
+        graph,
+        lambda pid: (
+            storage.get_package(pid)
+            .metadata.get("scores", {})
+            .get("net_score", {})
+            .get("score", 0.0)
+            if storage.get_package(pid)
+            else 0.0
+        ),
+    )
+
+    tree_score_latency = time.perf_counter() - tree_score_start
+    print("TREEEEEEEEEE", tree_score_val)
+
     reproducibility_val = 0.0
     reproducibility_latency = 0.0
-    tree_score_val = 0.0
-    tree_score_latency = 0.0
 
     # Build complete ModelRating response with all required fields
     rating = {
@@ -1143,14 +1199,14 @@ def get_model_rating(artifact_id):
         "dataset_quality_latency": dataset_quality_latency,
         "code_quality": code_quality_val,
         "code_quality_latency": code_quality_latency,
+        "size_score": size_score_obj,
+        "size_score_latency": size_score_latency,
         "reproducibility": reproducibility_val,
         "reproducibility_latency": reproducibility_latency,
         "reviewedness": reviewedness_val,
         "reviewedness_latency": reviewedness_latency,
         "tree_score": tree_score_val,
         "tree_score_latency": tree_score_latency,
-        "size_score": size_score_obj,
-        "size_score_latency": size_score_latency,
     }
 
     return jsonify(rating), 200
@@ -1409,8 +1465,8 @@ def get_artifact_cost(artifact_type, artifact_id):
 def get_artifact_lineage(artifact_id):
     """Get lineage graph for model artifact.
 
-    Extracts lineage information from model's config.json and matches
-    against models currently in the system.
+    Extracts lineage information from model's config.json and recursively
+    traverses all parent dependencies to build a complete lineage graph.
 
     Returns:
         tuple: (ArtifactLineageGraph JSON, 200) or error response
@@ -1431,206 +1487,31 @@ def get_artifact_lineage(artifact_id):
         return jsonify({"error": "No URL in package metadata"}), 400
 
     try:
-        model = Model(model=ModelResource(url=url))
-        nodes = []
-        edges = []
+        # Get all packages for lineage graph construction
+        all_packages = storage.list_packages(offset=0, limit=10000)
+        
+        # CRITICAL: Ensure root package is in the list
+        if package not in all_packages:
+            # Find it by ID or add it
+            all_packages = [p for p in all_packages if p.id != artifact_id]
+            all_packages.append(package)
 
-        # Add current model as a node
-        current_node = {
-            "artifact_id": artifact_id,
-            "name": package.name,
-            "source": "config_json",
-        }
-        nodes.append(current_node)
-
-        # Try to read config.json to extract lineage information
-        try:
-            with model.model.open_files(allow_patterns=["config.json"]) as repo:
-                if repo.exists("config.json"):
-                    config = repo.read_json("config.json")
-
-                    # Extract base model information
-                    base_model_path = None
-                    if "_name_or_path" in config:
-                        base_model_path = config["_name_or_path"]
-                    elif "base_model" in config:
-                        base_model_path = config["base_model"]
-
-                    # Search for base model in storage
-                    if base_model_path:
-                        base_model_id = base_model_path
-                        if "huggingface.co" in base_model_path.lower():
-                            parsed = urlparse(base_model_path)
-                            path_parts = [
-                                x for x in parsed.path.strip("/").split("/") if x
-                            ]
-                            if len(path_parts) >= 2:
-                                base_model_id = f"{path_parts[0]}/{path_parts[1]}"
-                            elif len(path_parts) == 1:
-                                base_model_id = path_parts[0]
-                        elif "/" in base_model_path:
-                            base_model_id = base_model_path
-                        else:
-                            base_model_id = base_model_path
-
-                        found_parent = None
-                        all_packages = storage.list_packages(offset=0, limit=10000)
-                        for pkg in all_packages:
-                            pkg_url = pkg.metadata.get("url", "")
-                            pkg_name = pkg.name.lower()
-
-                            pkg_model_id = None
-                            if pkg_url and "huggingface.co" in pkg_url.lower():
-                                parsed = urlparse(pkg_url)
-                                path_parts = [
-                                    x for x in parsed.path.strip("/").split("/") if x
-                                ]
-                                if len(path_parts) >= 2:
-                                    pkg_model_id = f"{path_parts[0]}/{path_parts[1]}"
-                                elif len(path_parts) == 1:
-                                    pkg_model_id = path_parts[0]
-
-                            if (
-                                pkg_model_id
-                                and base_model_id.lower() == pkg_model_id.lower()
-                            ):
-                                found_parent = pkg
-                                break
-
-                            if (
-                                "/" not in base_model_id
-                                and pkg_name
-                                and base_model_id.lower() == pkg_name
-                            ):
-                                found_parent = pkg
-                                break
-
-                            base_model_name = (
-                                base_model_id.split("/")[-1].lower()
-                                if "/" in base_model_id
-                                else base_model_id.lower()
-                            )
-                            if (
-                                pkg_url
-                                and base_model_name in pkg_url.lower()
-                                and "huggingface.co" in pkg_url.lower()
-                            ):
-                                if base_model_name in pkg_url.lower().split("/")[-1]:
-                                    found_parent = pkg
-                                    break
-
-                        if found_parent:
-                            parent_node = {
-                                "artifact_id": found_parent.id,
-                                "name": found_parent.name,
-                                "source": "config_json",
-                            }
-                            if not any(
-                                n["artifact_id"] == found_parent.id for n in nodes
-                            ):
-                                nodes.append(parent_node)
-
-                            edge = {
-                                "from_node_artifact_id": found_parent.id,
-                                "to_node_artifact_id": artifact_id,
-                                "relationship": "base_model",
-                            }
-                            edges.append(edge)
-
-                    # Check for dataset information in config
-                    dataset_name = None
-                    if "dataset" in config:
-                        dataset_name = config["dataset"]
-                    elif "train_dataset" in config:
-                        dataset_name = config["train_dataset"]
-
-                    if dataset_name:
-                        dataset_id = dataset_name
-                        if "huggingface.co" in dataset_name.lower():
-                            parsed = urlparse(dataset_name)
-                            path_parts = [
-                                x for x in parsed.path.strip("/").split("/") if x
-                            ]
-                            if path_parts and path_parts[0] == "datasets":
-                                path_parts = path_parts[1:]
-                            if len(path_parts) >= 2:
-                                dataset_id = f"{path_parts[0]}/{path_parts[1]}"
-                            elif len(path_parts) == 1:
-                                dataset_id = path_parts[0]
-
-                        all_packages = storage.list_packages(offset=0, limit=10000)
-                        for pkg in all_packages:
-                            pkg_url = pkg.metadata.get("url", "")
-                            pkg_name = pkg.name.lower()
-
-                            if "huggingface.co/datasets/" in pkg_url.lower():
-                                parsed = urlparse(pkg_url)
-                                path_parts = [
-                                    x for x in parsed.path.strip("/").split("/") if x
-                                ]
-                                if path_parts and path_parts[0] == "datasets":
-                                    path_parts = path_parts[1:]
-                                pkg_dataset_id = None
-                                if len(path_parts) >= 2:
-                                    pkg_dataset_id = f"{path_parts[0]}/{path_parts[1]}"
-                                elif len(path_parts) == 1:
-                                    pkg_dataset_id = path_parts[0]
-
-                                dataset_id_lower = dataset_id.lower()
-                                if (
-                                    pkg_dataset_id
-                                    and dataset_id_lower == pkg_dataset_id.lower()
-                                ):
-                                    dataset_node = {
-                                        "artifact_id": pkg.id,
-                                        "name": pkg.name,
-                                        "source": "upstream_dataset",
-                                    }
-                                    if not any(
-                                        n["artifact_id"] == pkg.id for n in nodes
-                                    ):
-                                        nodes.append(dataset_node)
-
-                                    edge = {
-                                        "from_node_artifact_id": pkg.id,
-                                        "to_node_artifact_id": artifact_id,
-                                        "relationship": "fine_tuning_dataset",
-                                    }
-                                    edges.append(edge)
-                                    break
-
-                                if (
-                                    "/" not in dataset_id
-                                    and dataset_id_lower == pkg_name
-                                ):
-                                    dataset_node = {
-                                        "artifact_id": pkg.id,
-                                        "name": pkg.name,
-                                        "source": "upstream_dataset",
-                                    }
-                                    if not any(
-                                        n["artifact_id"] == pkg.id for n in nodes
-                                    ):
-                                        nodes.append(dataset_node)
-
-                                    edge = {
-                                        "from_node_artifact_id": pkg.id,
-                                        "to_node_artifact_id": artifact_id,
-                                        "relationship": "fine_tuning_dataset",
-                                    }
-                                    edges.append(edge)
-                                    break
-
-        except Exception as e:
-            logger.warning(f"Could not read config.json for lineage: {str(e)}")
-
-        lineage = {"nodes": nodes, "edges": edges}
+        # Build lineage graph using the function from lineage.py
+        lineage = build_lineage_graph(
+            artifact_id,
+            all_packages,
+            load_config_from_repo,
+        )
 
         return jsonify(lineage), 200
 
     except Exception as e:
         logger.error(f"Error building lineage graph: {str(e)}")
-        return jsonify({"error": f"Failed to build lineage graph: {str(e)}"}), 400
+        return jsonify(
+            {
+                "error": "The lineage graph cannot be computed because the artifact metadata is missing or malformed."
+            }
+        ), 400
 
 
 @app.route("/api/artifact/model/<artifact_id>/license-check", methods=["POST"])
@@ -1732,13 +1613,17 @@ def mark_model_sensitive(artifact_id):
 
     storage.update_package(package)
 
-    logger.info(f"Model '{package.name}' (ID: {artifact_id}) marked as sensitive={is_sensitive} by '{user_info['username']}'")
+    logger.info(
+        f"Model '{package.name}' (ID: {artifact_id}) marked as sensitive={is_sensitive} by '{user_info['username']}'"
+    )
 
-    return jsonify({
-        "message": f"Model marked as {'sensitive' if is_sensitive else 'not sensitive'}",
-        "is_sensitive": is_sensitive,
-        "has_monitoring_script": bool(monitoring_script)
-    }), 200
+    return jsonify(
+        {
+            "message": f"Model marked as {'sensitive' if is_sensitive else 'not sensitive'}",
+            "is_sensitive": is_sensitive,
+            "has_monitoring_script": bool(monitoring_script),
+        }
+    ), 200
 
 
 @app.route("/api/artifact/model/<artifact_id>/sensitive", methods=["GET"])
@@ -1770,10 +1655,9 @@ def get_model_sensitive_status(artifact_id):
     is_sensitive = package.metadata.get("is_sensitive", False)
     monitoring_script = package.metadata.get("monitoring_script", "")
 
-    return jsonify({
-        "is_sensitive": is_sensitive,
-        "monitoring_script": monitoring_script
-    }), 200
+    return jsonify(
+        {"is_sensitive": is_sensitive, "monitoring_script": monitoring_script}
+    ), 200
 
 
 @app.route("/api/artifact/model/<artifact_id>/sensitive", methods=["DELETE"])
@@ -1809,7 +1693,9 @@ def delete_model_sensitive_status(artifact_id):
 
     storage.update_package(package)
 
-    logger.info(f"Model '{package.name}' (ID: {artifact_id}) sensitive status removed by '{user_info['username']}'")
+    logger.info(
+        f"Model '{package.name}' (ID: {artifact_id}) sensitive status removed by '{user_info['username']}'"
+    )
 
     return jsonify({"message": "Sensitive status removed"}), 200
 
@@ -2019,7 +1905,7 @@ def authenticate():
                 username=username,
                 created_at=datetime.now(timezone.utc),
                 usage_count=0,
-                expires_at=datetime.now(timezone.utc) + timedelta(hours=10)
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=10),
             )
             storage.create_token(token_info)
 
@@ -2138,7 +2024,9 @@ def register_user():
 
     # Check if user is admin
     if not user_info or not user_info.get("is_admin"):
-        return jsonify({"error": "Insufficient permissions. Admin access required."}), 403
+        return jsonify(
+            {"error": "Insufficient permissions. Admin access required."}
+        ), 403
 
     try:
         data = request.get_json()
@@ -2167,12 +2055,14 @@ def register_user():
             password_hash=hash_password(password),
             permissions=permissions,
             is_admin=is_admin,
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.now(timezone.utc),
         )
 
         storage.create_user(new_user)
 
-        logger.info(f"User '{username}' registered successfully by '{user_info['username']}'")
+        logger.info(
+            f"User '{username}' registered successfully by '{user_info['username']}'"
+        )
 
         return jsonify(new_user.to_dict()), 201
 
@@ -2232,7 +2122,9 @@ def list_users():
 
     # Check if user is admin
     if not user_info or not user_info.get("is_admin"):
-        return jsonify({"error": "Insufficient permissions. Admin access required."}), 403
+        return jsonify(
+            {"error": "Insufficient permissions. Admin access required."}
+        ), 403
 
     users = storage.list_users()
     users_data = [user.to_dict() for user in users]
@@ -2332,7 +2224,7 @@ def ingest_model():
         package_id = str(uuid.uuid4())
         # Infer artifact type from URL
         artifact_type = infer_artifact_type_from_url(url)
-        
+
         package = Package(
             id=package_id,
             artifact_type=artifact_type,
@@ -2432,7 +2324,7 @@ def ingest_upload():
                 artifact_type = "model"  # default
                 if "url" in metadata:
                     artifact_type = infer_artifact_type_from_url(metadata["url"])
-                
+
                 package = Package(
                     id=package_id,
                     artifact_type=artifact_type,
@@ -2547,7 +2439,9 @@ def download_artifact(artifact_name):
 
             try:
                 # Create temporary file for the script
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.js', delete=False) as script_file:
+                with tempfile.NamedTemporaryFile(
+                    mode="w", suffix=".js", delete=False
+                ) as script_file:
                     script_file.write(monitoring_script)
                     script_path = script_file.name
 
@@ -2555,15 +2449,26 @@ def download_artifact(artifact_name):
                 model_name = package.name
                 uploader_username = package.uploaded_by
                 downloader_username = user_info.get("username", "unknown")
-                zip_file_path = package.metadata.get("url", "")  # Use URL as placeholder
+                zip_file_path = package.metadata.get(
+                    "url", ""
+                )  # Use URL as placeholder
 
                 # Execute the script with Node.js
-                logger.info(f"Executing monitoring script for sensitive model '{model_name}'")
+                logger.info(
+                    f"Executing monitoring script for sensitive model '{model_name}'"
+                )
                 result = subprocess.run(
-                    ['node', script_path, model_name, uploader_username, downloader_username, zip_file_path],
+                    [
+                        "node",
+                        script_path,
+                        model_name,
+                        uploader_username,
+                        downloader_username,
+                        zip_file_path,
+                    ],
                     capture_output=True,
                     text=True,
-                    timeout=30  # 30 second timeout
+                    timeout=30,  # 30 second timeout
                 )
 
                 # Clean up temp file
@@ -2571,14 +2476,24 @@ def download_artifact(artifact_name):
 
                 # Check exit code
                 if result.returncode != 0:
-                    logger.warning(f"Monitoring script rejected download of '{model_name}' for user '{downloader_username}'")
-                    error_msg = result.stdout.strip() if result.stdout else "Download rejected by monitoring script"
-                    return jsonify({
-                        "error": f"Download rejected: {error_msg}",
-                        "monitoring_output": result.stdout
-                    }), 403
+                    logger.warning(
+                        f"Monitoring script rejected download of '{model_name}' for user '{downloader_username}'"
+                    )
+                    error_msg = (
+                        result.stdout.strip()
+                        if result.stdout
+                        else "Download rejected by monitoring script"
+                    )
+                    return jsonify(
+                        {
+                            "error": f"Download rejected: {error_msg}",
+                            "monitoring_output": result.stdout,
+                        }
+                    ), 403
 
-                logger.info(f"Monitoring script approved download of '{model_name}' for user '{downloader_username}'")
+                logger.info(
+                    f"Monitoring script approved download of '{model_name}' for user '{downloader_username}'"
+                )
 
             except subprocess.TimeoutExpired:
                 logger.error(f"Monitoring script timeout for model '{model_name}'")
@@ -2587,10 +2502,12 @@ def download_artifact(artifact_name):
                 return jsonify({"error": "Monitoring script timeout"}), 500
             except FileNotFoundError:
                 logger.error("Node.js not found - cannot execute monitoring script")
-                return jsonify({"error": "Node.js not available for monitoring script execution"}), 500
+                return jsonify(
+                    {"error": "Node.js not available for monitoring script execution"}
+                ), 500
             except Exception as e:
                 logger.error(f"Error executing monitoring script: {str(e)}")
-                if 'script_path' in locals() and os.path.exists(script_path):
+                if "script_path" in locals() and os.path.exists(script_path):
                     os.unlink(script_path)
                 return jsonify({"error": f"Monitoring script error: {str(e)}"}), 500
 
@@ -2601,17 +2518,21 @@ def download_artifact(artifact_name):
 
         download_record = {
             "username": user_info.get("username", "unknown"),
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         package.metadata["download_history"].append(download_record)
         storage.update_package(package)
 
-        logger.info(f"Recorded download of sensitive model '{package.name}' by '{user_info['username']}'")
+        logger.info(
+            f"Recorded download of sensitive model '{package.name}' by '{user_info['username']}'"
+        )
 
     # Return download URL or redirect
     download_url = package.metadata.get("url", "")
     if download_url:
-        logger.info(f"Artifact '{artifact_name}' downloaded by '{user_info['username']}'")
+        logger.info(
+            f"Artifact '{artifact_name}' downloaded by '{user_info['username']}'"
+        )
         return jsonify({"download_url": download_url}), 200
     else:
         return jsonify({"error": "No download URL available for this artifact"}), 404
