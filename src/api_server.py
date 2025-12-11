@@ -80,6 +80,34 @@ def initialize_default_token():
     _valid_tokens.add(DEFAULT_TOKEN)
 
 
+def initialize_default_admin_user():
+    """Initialize the default admin user in storage.
+
+    Creates the default admin user with all permissions if it doesn't already exist.
+    This ensures the autograder and other tools can authenticate with the default credentials.
+    """
+    from auth import hash_password
+    from registry_models import User
+
+    # Check if default user already exists
+    existing_user = storage.get_user(DEFAULT_USERNAME)
+    if existing_user:
+        logger.info("Default admin user already exists")
+        return
+
+    # Create default admin user with all permissions
+    default_user = User(
+        user_id=str(uuid.uuid4()),
+        username=DEFAULT_USERNAME,
+        password_hash=hash_password(DEFAULT_PASSWORD),
+        permissions=["upload", "search", "download", "admin"],
+        is_admin=True,
+        created_at=datetime.now(timezone.utc)
+    )
+    storage.create_user(default_user)
+    logger.info(f"Created default admin user: {DEFAULT_USERNAME}")
+
+
 def check_auth_header():
     """Check if X-Authorization header is present and token is valid.
 
@@ -152,6 +180,41 @@ def check_auth_header():
     }
 
     return True, None, user_info
+
+
+def check_permission(user_info: dict, required_permission: str) -> tuple:
+    """Check if user has the required permission.
+
+    Args:
+        user_info: User information dict from check_auth_header()
+        required_permission: Permission to check ('upload', 'search', 'download', 'admin')
+
+    Returns:
+        tuple: (has_permission, error_response)
+            - has_permission (bool): True if user has permission
+            - error_response (Optional[tuple]): (json_response, status_code) if denied, None if allowed
+    """
+    if not user_info:
+        return False, (
+            jsonify({"error": "Authentication failed due to invalid or missing AuthenticationToken"}),
+            403,
+        )
+
+    # Admin users have all permissions
+    if user_info.get("is_admin", False):
+        return True, None
+
+    # Check if user has the specific permission
+    user_permissions = user_info.get("permissions", [])
+    if required_permission in user_permissions:
+        return True, None
+
+    # Permission denied
+    logger.warning(f"Permission denied: user={user_info.get('username')} lacks '{required_permission}' permission")
+    return False, (
+        jsonify({"error": f"You do not have permission to {required_permission}"}),
+        403,
+    )
 
 
 def infer_artifact_type_from_url(url: str) -> str:
@@ -673,6 +736,11 @@ def list_artifacts():
         logger.warning("list_artifacts: auth check failed")
         return error_response
 
+    # Check search permission
+    has_permission, permission_error = check_permission(user_info, "search")
+    if not has_permission:
+        return permission_error
+
     queries = request.get_json()
     logger.info(f"queries: {queries}")
     if not isinstance(queries, list) or len(queries) == 0:
@@ -752,6 +820,11 @@ def get_artifact(artifact_type, artifact_id):
     is_valid, error_response, user_info = check_auth_header()
     if not is_valid:
         return error_response
+
+    # Check search permission
+    has_permission, permission_error = check_permission(user_info, "search")
+    if not has_permission:
+        return permission_error
 
     if not validate_artifact_type(artifact_type):
         return jsonify({"error": f"Invalid artifact type: {artifact_type}"}), 400
@@ -862,6 +935,11 @@ def create_artifact(artifact_type):
     is_valid, error_response, user_info = check_auth_header()
     if not is_valid:
         return error_response
+
+    # Check upload permission
+    has_permission, permission_error = check_permission(user_info, "upload")
+    if not has_permission:
+        return permission_error
 
     if not validate_artifact_type(artifact_type):
         return jsonify({"error": f"Invalid artifact type: {artifact_type}"}), 400
@@ -1601,6 +1679,170 @@ def check_artifact_license(artifact_id):
         return jsonify({"error": str(e)}), 502
 
 
+@app.route("/api/artifact/model/<artifact_id>/sensitive", methods=["POST", "PUT"])
+def mark_model_sensitive(artifact_id):
+    """Mark a model as sensitive and set monitoring script.
+
+    Any user can mark models as sensitive.
+
+    Request body: {
+        "is_sensitive": bool,
+        "monitoring_script": string (JavaScript code, optional)
+    }
+
+    Args:
+        artifact_id: Model ID to mark as sensitive
+
+    Returns:
+        tuple: (Success message JSON, 200) or error response
+    """
+    is_valid, error_response, user_info = check_auth_header()
+    if not is_valid:
+        return error_response
+
+    if not validate_artifact_id(artifact_id):
+        return jsonify({"error": "Invalid artifact ID format"}), 400
+
+    package = storage.get_package(artifact_id)
+    if not package:
+        return jsonify({"error": "Artifact not found"}), 404
+
+    if package.artifact_type != "model":
+        return jsonify({"error": "Only models can be marked as sensitive"}), 400
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Request body required"}), 400
+
+    is_sensitive = data.get("is_sensitive", True)
+    monitoring_script = data.get("monitoring_script", "")
+
+    # Update package metadata
+    package.metadata["is_sensitive"] = is_sensitive
+    if monitoring_script:
+        package.metadata["monitoring_script"] = monitoring_script
+    elif "monitoring_script" in package.metadata:
+        # Remove script if not provided and unsetting sensitive
+        if not is_sensitive:
+            del package.metadata["monitoring_script"]
+
+    # Initialize download history if not present
+    if "download_history" not in package.metadata:
+        package.metadata["download_history"] = []
+
+    storage.update_package(package)
+
+    logger.info(f"Model '{package.name}' (ID: {artifact_id}) marked as sensitive={is_sensitive} by '{user_info['username']}'")
+
+    return jsonify({
+        "message": f"Model marked as {'sensitive' if is_sensitive else 'not sensitive'}",
+        "is_sensitive": is_sensitive,
+        "has_monitoring_script": bool(monitoring_script)
+    }), 200
+
+
+@app.route("/api/artifact/model/<artifact_id>/sensitive", methods=["GET"])
+def get_model_sensitive_status(artifact_id):
+    """Get sensitive status and monitoring script for a model.
+
+    Any user can query sensitive status.
+
+    Args:
+        artifact_id: Model ID to query
+
+    Returns:
+        tuple: (Sensitive info JSON, 200) or error response
+    """
+    is_valid, error_response, user_info = check_auth_header()
+    if not is_valid:
+        return error_response
+
+    if not validate_artifact_id(artifact_id):
+        return jsonify({"error": "Invalid artifact ID format"}), 400
+
+    package = storage.get_package(artifact_id)
+    if not package:
+        return jsonify({"error": "Artifact not found"}), 404
+
+    if package.artifact_type != "model":
+        return jsonify({"error": "Only models can be sensitive"}), 400
+
+    is_sensitive = package.metadata.get("is_sensitive", False)
+    monitoring_script = package.metadata.get("monitoring_script", "")
+
+    return jsonify({
+        "is_sensitive": is_sensitive,
+        "monitoring_script": monitoring_script
+    }), 200
+
+
+@app.route("/api/artifact/model/<artifact_id>/sensitive", methods=["DELETE"])
+def delete_model_sensitive_status(artifact_id):
+    """Remove sensitive status from a model.
+
+    Any user can remove sensitive status.
+
+    Args:
+        artifact_id: Model ID to update
+
+    Returns:
+        tuple: (Success message JSON, 200) or error response
+    """
+    is_valid, error_response, user_info = check_auth_header()
+    if not is_valid:
+        return error_response
+
+    if not validate_artifact_id(artifact_id):
+        return jsonify({"error": "Invalid artifact ID format"}), 400
+
+    package = storage.get_package(artifact_id)
+    if not package:
+        return jsonify({"error": "Artifact not found"}), 404
+
+    if package.artifact_type != "model":
+        return jsonify({"error": "Only models can be sensitive"}), 400
+
+    # Remove sensitive status and monitoring script
+    package.metadata["is_sensitive"] = False
+    if "monitoring_script" in package.metadata:
+        del package.metadata["monitoring_script"]
+
+    storage.update_package(package)
+
+    logger.info(f"Model '{package.name}' (ID: {artifact_id}) sensitive status removed by '{user_info['username']}'")
+
+    return jsonify({"message": "Sensitive status removed"}), 200
+
+
+@app.route("/api/artifact/model/<artifact_id>/download-history", methods=["GET"])
+def get_model_download_history(artifact_id):
+    """Get download history for a sensitive model.
+
+    Args:
+        artifact_id: Model ID to query
+
+    Returns:
+        tuple: (Download history JSON array, 200) or error response
+    """
+    is_valid, error_response, user_info = check_auth_header()
+    if not is_valid:
+        return error_response
+
+    if not validate_artifact_id(artifact_id):
+        return jsonify({"error": "Invalid artifact ID format"}), 400
+
+    package = storage.get_package(artifact_id)
+    if not package:
+        return jsonify({"error": "Artifact not found"}), 404
+
+    if package.artifact_type != "model":
+        return jsonify({"error": "Only models can have download history"}), 400
+
+    download_history = package.metadata.get("download_history", [])
+
+    return jsonify(download_history), 200
+
+
 @app.route("/api/artifact/byName/<artifact_name>", methods=["GET"])
 def get_artifacts_by_name(artifact_name):
     """Get artifact metadata entries by name.
@@ -1623,6 +1865,11 @@ def get_artifacts_by_name(artifact_name):
     if not is_valid:
         logger.warning("get_artifacts_by_name: auth check failed")
         return error_response
+
+    # Check search permission
+    has_permission, permission_error = check_permission(user_info, "search")
+    if not has_permission:
+        return permission_error
 
     if not artifact_name or not artifact_name.strip():
         return jsonify(
@@ -2016,6 +2263,15 @@ def ingest_model():
             Error (400): Invalid URL, missing URL, or failed quality threshold
             Error (500): Server error during ingestion or evaluation
     """
+    is_valid, error_response, user_info = check_auth_header()
+    if not is_valid:
+        return error_response
+
+    # Check upload permission
+    has_permission, permission_error = check_permission(user_info, "upload")
+    if not has_permission:
+        return permission_error
+
     try:
         data = request.get_json()
         if not data or "url" not in data:
@@ -2119,6 +2375,15 @@ def ingest_upload():
             Error (400): No file, invalid format, validation errors
             Error (500): Server error during processing
     """
+    is_valid, error_response, user_info = check_auth_header()
+    if not is_valid:
+        return error_response
+
+    # Check upload permission
+    has_permission, permission_error = check_permission(user_info, "upload")
+    if not has_permission:
+        return permission_error
+
     try:
         if "file" not in request.files:
             return jsonify({"error": "No file provided"}), 400
@@ -2233,8 +2498,128 @@ def health_dashboard_redirect():
     return render_template("health.html")
 
 
+@app.route("/download/<artifact_name>", methods=["GET"])
+def download_artifact(artifact_name):
+    """Download an artifact.
+
+    For sensitive models, executes monitoring script before allowing download.
+
+    Args:
+        artifact_name: Name of artifact to download
+
+    Returns:
+        Redirect to download URL or error response
+    """
+    is_valid, error_response, user_info = check_auth_header()
+    if not is_valid:
+        return error_response
+
+    # Check download permission
+    has_permission, permission_error = check_permission(user_info, "download")
+    if not has_permission:
+        return permission_error
+
+    if not artifact_name or not artifact_name.strip():
+        return jsonify({"error": "Invalid artifact name"}), 400
+
+    # Find the artifact by name (get latest version if multiple)
+    matching_packages = []
+    for package in storage.packages.values():
+        if package.name == artifact_name:
+            matching_packages.append(package)
+
+    if not matching_packages:
+        return jsonify({"error": "Artifact not found"}), 404
+
+    # Get the most recent package
+    package = max(matching_packages, key=lambda p: p.upload_timestamp)
+
+    # Check if model is sensitive
+    is_sensitive = package.metadata.get("is_sensitive", False)
+
+    if is_sensitive and package.artifact_type == "model":
+        monitoring_script = package.metadata.get("monitoring_script", "")
+
+        if monitoring_script:
+            # Execute Node.js monitoring script
+            import tempfile
+            import subprocess
+
+            try:
+                # Create temporary file for the script
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.js', delete=False) as script_file:
+                    script_file.write(monitoring_script)
+                    script_path = script_file.name
+
+                # Prepare arguments for the script
+                model_name = package.name
+                uploader_username = package.uploaded_by
+                downloader_username = user_info.get("username", "unknown")
+                zip_file_path = package.metadata.get("url", "")  # Use URL as placeholder
+
+                # Execute the script with Node.js
+                logger.info(f"Executing monitoring script for sensitive model '{model_name}'")
+                result = subprocess.run(
+                    ['node', script_path, model_name, uploader_username, downloader_username, zip_file_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=30  # 30 second timeout
+                )
+
+                # Clean up temp file
+                os.unlink(script_path)
+
+                # Check exit code
+                if result.returncode != 0:
+                    logger.warning(f"Monitoring script rejected download of '{model_name}' for user '{downloader_username}'")
+                    error_msg = result.stdout.strip() if result.stdout else "Download rejected by monitoring script"
+                    return jsonify({
+                        "error": f"Download rejected: {error_msg}",
+                        "monitoring_output": result.stdout
+                    }), 403
+
+                logger.info(f"Monitoring script approved download of '{model_name}' for user '{downloader_username}'")
+
+            except subprocess.TimeoutExpired:
+                logger.error(f"Monitoring script timeout for model '{model_name}'")
+                if os.path.exists(script_path):
+                    os.unlink(script_path)
+                return jsonify({"error": "Monitoring script timeout"}), 500
+            except FileNotFoundError:
+                logger.error("Node.js not found - cannot execute monitoring script")
+                return jsonify({"error": "Node.js not available for monitoring script execution"}), 500
+            except Exception as e:
+                logger.error(f"Error executing monitoring script: {str(e)}")
+                if 'script_path' in locals() and os.path.exists(script_path):
+                    os.unlink(script_path)
+                return jsonify({"error": f"Monitoring script error: {str(e)}"}), 500
+
+    # Record download in history for sensitive models
+    if is_sensitive and package.artifact_type == "model":
+        if "download_history" not in package.metadata:
+            package.metadata["download_history"] = []
+
+        download_record = {
+            "username": user_info.get("username", "unknown"),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        package.metadata["download_history"].append(download_record)
+        storage.update_package(package)
+
+        logger.info(f"Recorded download of sensitive model '{package.name}' by '{user_info['username']}'")
+
+    # Return download URL or redirect
+    download_url = package.metadata.get("url", "")
+    if download_url:
+        logger.info(f"Artifact '{artifact_name}' downloaded by '{user_info['username']}'")
+        return jsonify({"download_url": download_url}), 200
+    else:
+        return jsonify({"error": "No download URL available for this artifact"}), 404
+
+
 if __name__ == "__main__":
     initialize_default_token()
+    initialize_default_admin_user()
     # Read port from environment variable (AWS EB sets this) or default to 8000
     port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port, debug=True)

@@ -126,19 +126,19 @@ def test_health_dashboard_page(client):
     assert b"System Health Dashboard" in response.data
 
 
-def test_check_auth_header_missing(client):
+def test_check_auth_header_missing(unauth_client):
     """Test check_auth_header returns 403 when header is missing."""
     # Test reset endpoint without auth header
-    response = client.delete("/api/reset")
+    response = unauth_client.delete("/api/reset")
     assert response.status_code == 403
     data = response.get_json()
     assert "Authentication failed" in data["error"]
 
 
-def test_check_auth_header_invalid_token(client):
+def test_check_auth_header_invalid_token(unauth_client):
     """Test check_auth_header returns 403 when token is invalid."""
     # Test reset endpoint with invalid token
-    response = client.delete("/api/reset", headers={"X-Authorization": "invalid-token"})
+    response = unauth_client.delete("/api/reset", headers={"X-Authorization": "invalid-token"})
     assert response.status_code == 403
     data = response.get_json()
     assert "Authentication failed" in data["error"]
@@ -148,6 +148,7 @@ def test_infer_artifact_type_dataset(client):
     """Test infer_artifact_type returns 'dataset' for dataset URLs."""
     package = Package(
         id="test-id",
+        artifact_type="unknown",
         name="test-dataset",
         version="1.0.0",
         uploaded_by="test-user",
@@ -185,6 +186,7 @@ def test_infer_artifact_type_code(client):
     """Test infer_artifact_type returns 'code' for code URLs."""
     package = Package(
         id="test-id",
+        artifact_type="unknown",
         name="test-code",
         version="1.0.0",
         uploaded_by="test-user",
@@ -217,6 +219,7 @@ def test_package_to_artifact_metadata_with_type(client):
     """Test package_to_artifact_metadata with explicit artifact_type."""
     package = Package(
         id="test-id",
+        artifact_type="model",
         name="test-model",
         version="1.0.0",
         uploaded_by="test-user",
@@ -226,20 +229,8 @@ def test_package_to_artifact_metadata_with_type(client):
     )
     storage.create_package(package)
 
-    # Authenticate
-    auth_data = {
-        "user": {"name": "ece30861defaultadminuser"},
-        "secret": {
-            "password": "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE packages;"
-        },
-    }
-    auth_response = client.put("/api/authenticate", json=auth_data)
-    token = auth_response.get_json()
-
     # Test get_artifact with explicit type
-    response = client.get(
-        "/api/artifacts/model/test-id", headers={"X-Authorization": token}
-    )
+    response = client.get("/api/artifacts/model/test-id")
     assert response.status_code == 200
 
 
@@ -247,6 +238,7 @@ def test_package_to_artifact_download_url_generation(client):
     """Test package_to_artifact generates download_url."""
     package = Package(
         id="test-id",
+        artifact_type="model",
         name="test-model",
         version="1.0.0",
         uploaded_by="test-user",
@@ -256,20 +248,8 @@ def test_package_to_artifact_download_url_generation(client):
     )
     storage.create_package(package)
 
-    # Authenticate
-    auth_data = {
-        "user": {"name": "ece30861defaultadminuser"},
-        "secret": {
-            "password": "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE packages;"
-        },
-    }
-    auth_response = client.put("/api/authenticate", json=auth_data)
-    token = auth_response.get_json()
-
     # Test get_artifact to trigger download_url generation
-    response = client.get(
-        "/api/artifacts/model/test-id", headers={"X-Authorization": token}
-    )
+    response = client.get("/api/artifacts/model/test-id")
     assert response.status_code == 200
     artifact = response.get_json()
     assert "download_url" in artifact["data"]
@@ -874,9 +854,9 @@ def test_authenticate_exception(client):
     assert response.status_code in [400, 415, 500]
 
 
-def test_list_artifacts_no_auth(client):
+def test_list_artifacts_no_auth(unauth_client):
     """Test list_artifacts without authentication."""
-    response = client.post("/api/artifacts", json=[{"name": "test"}])
+    response = unauth_client.post("/api/artifacts", json=[{"name": "test"}])
     assert response.status_code == 403
 
 
@@ -979,9 +959,9 @@ def test_list_artifacts_exception(client):
         assert response.status_code == 500
 
 
-def test_get_artifact_no_auth(client):
+def test_get_artifact_no_auth(unauth_client):
     """Test get_artifact without authentication."""
-    response = client.get("/api/artifacts/model/test-id")
+    response = unauth_client.get("/api/artifacts/model/test-id")
     assert response.status_code == 403
 
 
@@ -1003,9 +983,9 @@ def test_get_artifact_not_found(client):
     assert response.status_code == 404
 
 
-def test_update_artifact_no_auth(client):
+def test_update_artifact_no_auth(unauth_client):
     """Test update_artifact without authentication."""
-    response = client.put("/api/artifacts/model/test-id", json={})
+    response = unauth_client.put("/api/artifacts/model/test-id", json={})
     assert response.status_code == 403
 
 
@@ -1024,6 +1004,7 @@ def test_update_artifact_missing_body(client):
     # Create a package first
     package = Package(
         id="test-id",
+        artifact_type="unknown",
         name="test-model",
         version="1.0.0",
         uploaded_by="test-user",
@@ -1058,6 +1039,7 @@ def test_update_artifact_id_mismatch(client):
     # Create a package first
     package = Package(
         id="test-id",
+        artifact_type="unknown",
         name="test-model",
         version="1.0.0",
         uploaded_by="test-user",
@@ -1090,6 +1072,7 @@ def test_update_artifact_type_mismatch(client):
     # Create a package first
     package = Package(
         id="test-id",
+        artifact_type="unknown",
         name="test-model",
         version="1.0.0",
         uploaded_by="test-user",
@@ -1107,9 +1090,9 @@ def test_update_artifact_type_mismatch(client):
     assert response.status_code == 400
 
 
-def test_create_artifact_no_auth(client):
+def test_create_artifact_no_auth(unauth_client):
     """Test create_artifact without authentication."""
-    response = client.post(
+    response = unauth_client.post(
         "/api/artifact/model",
         json={"url": "https://huggingface.co/test-org/test-model"},
     )
@@ -1151,6 +1134,7 @@ def test_create_artifact_duplicate_url(client):
     # Create package with this URL first
     package = Package(
         id="test-id",
+        artifact_type="unknown",
         name="test-model",
         version="1.0.0",
         uploaded_by="test-user",
@@ -1201,9 +1185,9 @@ def test_create_artifact_metrics_failure(client):
         assert response.status_code in [400, 424, 500]
 
 
-def test_get_model_rating_no_auth(client):
+def test_get_model_rating_no_auth(unauth_client):
     """Test get_model_rating without authentication."""
-    response = client.get("/api/artifact/model/test-id/rate")
+    response = unauth_client.get("/api/artifact/model/test-id/rate")
     assert response.status_code == 403
 
 
@@ -1222,6 +1206,7 @@ def test_get_model_rating_no_url(client):
     # Create package without URL
     package = Package(
         id="test-id",
+        artifact_type="unknown",
         name="test-model",
         version="1.0.0",
         uploaded_by="test-user",
@@ -1252,6 +1237,7 @@ def test_get_model_rating_compute_metrics(client):
     # Create package with URL but no scores
     package = Package(
         id="test-id",
+        artifact_type="unknown",
         name="test-model",
         version="1.0.0",
         uploaded_by="test-user",
@@ -1290,6 +1276,7 @@ def test_get_model_rating_exception(client):
     # Create package
     package = Package(
         id="test-id",
+        artifact_type="unknown",
         name="test-model",
         version="1.0.0",
         uploaded_by="test-user",
@@ -1308,9 +1295,9 @@ def test_get_model_rating_exception(client):
         assert response.status_code == 500
 
 
-def test_get_artifact_cost_no_auth(client):
+def test_get_artifact_cost_no_auth(unauth_client):
     """Test get_artifact_cost without authentication."""
-    response = client.get("/api/artifact/model/test-id/cost")
+    response = unauth_client.get("/api/artifact/model/test-id/cost")
     assert response.status_code == 403
 
 
@@ -1334,19 +1321,10 @@ def test_get_artifact_cost_not_found(client):
 
 def test_get_artifact_cost_with_dependency(client):
     """Test get_artifact_cost with dependency parameter."""
-    # Authenticate
-    auth_data = {
-        "user": {"name": "ece30861defaultadminuser"},
-        "secret": {
-            "password": "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE packages;"
-        },
-    }
-    auth_response = client.put("/api/authenticate", json=auth_data)
-    token = auth_response.get_json()
-
     # Create package
     package = Package(
         id="test-id",
+        artifact_type="model",
         name="test-model",
         version="1.0.0",
         uploaded_by="test-user",
@@ -1356,10 +1334,7 @@ def test_get_artifact_cost_with_dependency(client):
     )
     storage.create_package(package)
 
-    response = client.get(
-        "/api/artifact/model/test-id/cost?dependency=true",
-        headers={"X-Authorization": token},
-    )
+    response = client.get("/api/artifact/model/test-id/cost?dependency=true")
     assert response.status_code == 200
     data = response.get_json()
     # Response format: {"artifact_id": {"standalone_cost": value, "total_cost": value}}
@@ -1368,9 +1343,9 @@ def test_get_artifact_cost_with_dependency(client):
     assert "total_cost" in data["test-id"]
 
 
-def test_get_artifact_lineage_no_auth(client):
+def test_get_artifact_lineage_no_auth(unauth_client):
     """Test get_artifact_lineage without authentication."""
-    response = client.get("/api/artifact/model/test-id/lineage")
+    response = unauth_client.get("/api/artifact/model/test-id/lineage")
     assert response.status_code == 403
 
 
@@ -1389,6 +1364,7 @@ def test_get_artifact_lineage_no_url(client):
     # Create package without URL
     package = Package(
         id="test-id",
+        artifact_type="unknown",
         name="test-model",
         version="1.0.0",
         uploaded_by="test-user",
@@ -1404,9 +1380,9 @@ def test_get_artifact_lineage_no_url(client):
     assert response.status_code == 400
 
 
-def test_check_artifact_license_no_auth(client):
+def test_check_artifact_license_no_auth(unauth_client):
     """Test check_artifact_license without authentication."""
-    response = client.post(
+    response = unauth_client.post(
         "/api/artifact/model/test-id/license-check",
         json={"github_url": "https://github.com/test"},
     )
@@ -1428,6 +1404,7 @@ def test_check_artifact_license_missing_body(client):
     # Create package
     package = Package(
         id="test-id",
+        artifact_type="unknown",
         name="test-model",
         version="1.0.0",
         uploaded_by="test-user",
@@ -1462,6 +1439,7 @@ def test_check_artifact_license_missing_github_url(client):
     # Create package
     package = Package(
         id="test-id",
+        artifact_type="unknown",
         name="test-model",
         version="1.0.0",
         uploaded_by="test-user",
@@ -1494,6 +1472,7 @@ def test_check_artifact_license_no_url(client):
     # Create package without URL
     package = Package(
         id="test-id",
+        artifact_type="unknown",
         name="test-model",
         version="1.0.0",
         uploaded_by="test-user",
@@ -1526,6 +1505,7 @@ def test_check_artifact_license_no_metric(client):
     # Create package
     package = Package(
         id="test-id",
+        artifact_type="unknown",
         name="test-model",
         version="1.0.0",
         uploaded_by="test-user",
@@ -1562,6 +1542,7 @@ def test_check_artifact_license_exception(client):
     # Create package
     package = Package(
         id="test-id",
+        artifact_type="unknown",
         name="test-model",
         version="1.0.0",
         uploaded_by="test-user",
@@ -1580,9 +1561,9 @@ def test_check_artifact_license_exception(client):
         assert response.status_code == 502
 
 
-def test_search_artifacts_by_regex_no_auth(client):
+def test_search_artifacts_by_regex_no_auth(unauth_client):
     """Test search_artifacts_by_regex without authentication."""
-    response = client.post("/api/artifact/byRegEx", json={"regex": "test"})
+    response = unauth_client.post("/api/artifact/byRegEx", json={"regex": "test"})
     assert response.status_code == 403
 
 

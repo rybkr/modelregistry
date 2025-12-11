@@ -10,15 +10,6 @@ from storage import storage
 from metrics.base_metric import Metric
 
 
-@pytest.fixture
-def client():
-    app.config["TESTING"] = True
-    with app.test_client() as client:
-        storage.reset()  # Reset before each test
-        yield client
-        storage.reset()  # Reset after each test
-
-
 def create_mock_metrics(
     license_score=0.8,
     ramp_up_score=0.7,
