@@ -1489,6 +1489,12 @@ def get_artifact_lineage(artifact_id):
     try:
         # Get all packages for lineage graph construction
         all_packages = storage.list_packages(offset=0, limit=10000)
+        
+        # CRITICAL: Ensure root package is in the list
+        if package not in all_packages:
+            # Find it by ID or add it
+            all_packages = [p for p in all_packages if p.id != artifact_id]
+            all_packages.append(package)
 
         # Build lineage graph using the function from lineage.py
         lineage = build_lineage_graph(

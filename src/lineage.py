@@ -22,47 +22,16 @@ def build_lineage_graph(
     edges = set()
     visited = set()
 
-    # Index by id
+    # Quick lookup by artifact ID
     pkg_index = {p.id: p for p in all_packages}
 
-    # Map HuggingFace IDs → local package IDs
+    # HF repo ID → artifact ID mapping
     hf_index = {
         extract_hf_id(p.metadata.get("url", "")): p.id
         for p in all_packages
         if extract_hf_id(p.metadata.get("url", ""))
     }
 
-    # --- First pass: discover parent relationships (upward edges only) ---
-    parent_map = {}  # child_id -> parent_id
-    children_map = {}  # parent_id -> list of child_ids
-
-    for pkg in all_packages:
-        cfg = load_config_fn(pkg)
-        if not cfg:
-            continue
-
-        base_path = cfg.get("_name_or_path")
-        base_model = cfg.get("base_model")
-        parent_uuid = None
-
-        # Case 1: _name_or_path is an HF repo ID
-        if base_path:
-            parent_uuid = hf_index.get(base_path) or hf_index.get(
-                extract_hf_id(base_path)
-            )
-
-        # Case 2: "base_model": "something-containing-name"
-        elif base_model:
-            for candidate in all_packages:
-                if candidate.name in base_model:
-                    parent_uuid = candidate.id
-                    break
-
-        if parent_uuid:
-            parent_map[pkg.id] = parent_uuid
-            children_map.setdefault(parent_uuid, []).append(pkg.id)
-
-    # --- Unified traversal: Walk upward *and* downward ---
     def walk(model_id: str):
         if model_id in visited:
             return
@@ -72,25 +41,42 @@ def build_lineage_graph(
         if not pkg:
             return
 
-        # Add node
+        # Add node for this package
         nodes[model_id] = {
             "artifact_id": pkg.id,
             "name": pkg.name,
             "source": "registry",
         }
 
-        # Walk upward to parents
-        parent_id = parent_map.get(model_id)
-        if parent_id:
-            edges.add((parent_id, model_id, "base_model"))
-            walk(parent_id)
+        # Load config for parent inspection
+        cfg = load_config_fn(pkg)
+        if not cfg:
+            return
 
-        # Walk downward to children
-        for child_id in children_map.get(model_id, []):
-            edges.add((model_id, child_id, "base_model"))
-            walk(child_id)
+        base_path: str = cfg.get("_name_or_path")
+        base_model: str = cfg.get("base_model")
 
-    # Start from any model — now yields entire family graph
+        parent_uuid = None
+
+        # Case 1: _name_or_path resembles HF repo
+        if base_path:
+            parent_uuid = hf_index.get(base_path) or hf_index.get(
+                extract_hf_id(base_path)
+            )
+
+        # Case 2: fuzzy match via 'base_model'
+        elif base_model:
+            for package in all_packages:
+                if package.name in base_model:
+                    parent_uuid = package.id
+                    break
+
+        # If we found a parent, add edge and walk upward
+        if parent_uuid:
+            edges.add((parent_uuid, model_id, "base_model"))
+            walk(parent_uuid)
+
+    # Only walk ancestors starting from root
     walk(root_id)
 
     return {
