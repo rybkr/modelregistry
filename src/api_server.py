@@ -2617,6 +2617,124 @@ def download_artifact(artifact_name):
         return jsonify({"error": "No download URL available for this artifact"}), 404
 
 
+@app.route("/api/PackageConfusionAudit", methods=["GET"])
+def package_confusion_audit():
+    """Audit packages for potential confusion attacks (typosquatting, bot farms).
+
+    Detects:
+    1. Typosquatting - packages with names similar to existing ones
+    2. Bot farm patterns - suspicious upload patterns from the same user
+
+    Returns:
+        JSON array of suspicious packages with risk scores and reasons
+    """
+    try:
+        # Get all packages
+        packages = storage.list_packages()
+        suspicious_packages = []
+
+        # Helper function to calculate Levenshtein distance
+        def levenshtein_distance(s1, s2):
+            """Calculate edit distance between two strings."""
+            if len(s1) < len(s2):
+                return levenshtein_distance(s2, s1)
+            if len(s2) == 0:
+                return len(s1)
+
+            previous_row = range(len(s2) + 1)
+            for i, c1 in enumerate(s1):
+                current_row = [i + 1]
+                for j, c2 in enumerate(s2):
+                    # Cost of insertions, deletions, or substitutions
+                    insertions = previous_row[j + 1] + 1
+                    deletions = current_row[j] + 1
+                    substitutions = previous_row[j] + (c1 != c2)
+                    current_row.append(min(insertions, deletions, substitutions))
+                previous_row = current_row
+
+            return previous_row[-1]
+
+        # 1. Detect typosquatting
+        package_names = [p.name for p in packages]
+        for i, pkg in enumerate(packages):
+            reasons = []
+            risk_score = 0.0
+
+            # Check for similar names (typosquatting)
+            for j, other_name in enumerate(package_names):
+                if i == j or pkg.name == other_name:
+                    continue
+
+                # Calculate similarity
+                distance = levenshtein_distance(pkg.name.lower(), other_name.lower())
+                max_len = max(len(pkg.name), len(other_name))
+
+                # If names are very similar (edit distance <= 2 or similarity > 80%)
+                if distance <= 2 and distance > 0:
+                    similarity = 1 - (distance / max_len)
+                    if similarity > 0.8:
+                        reasons.append(f"Typosquatting: Similar to '{other_name}' (distance: {distance})")
+                        risk_score += 0.4
+
+                # Check for common typosquatting patterns
+                # Character substitution (0->o, 1->l, etc.)
+                name_lower = pkg.name.lower()
+                other_lower = other_name.lower()
+                if name_lower.replace('0', 'o').replace('1', 'l') == other_lower or \
+                   name_lower == other_lower.replace('0', 'o').replace('1', 'l'):
+                    reasons.append(f"Character substitution attack: Similar to '{other_name}'")
+                    risk_score += 0.5
+
+            # 2. Detect bot farm patterns
+            # Check if user uploaded many packages in short time
+            user_packages = [p for p in packages if p.uploaded_by == pkg.uploaded_by]
+            if len(user_packages) >= 5:
+                # Check if packages have similar names (bot farm pattern)
+                similar_name_count = 0
+                for other_pkg in user_packages:
+                    if other_pkg.id != pkg.id:
+                        # Check for pattern-based naming (e.g., pkg1, pkg2, pkg3)
+                        if any(c.isdigit() for c in pkg.name) and any(c.isdigit() for c in other_pkg.name):
+                            base1 = ''.join(c for c in pkg.name if not c.isdigit())
+                            base2 = ''.join(c for c in other_pkg.name if not c.isdigit())
+                            if base1 == base2:
+                                similar_name_count += 1
+
+                if similar_name_count >= 3:
+                    reasons.append(f"Bot farm pattern: {len(user_packages)} packages from '{pkg.uploaded_by}' with similar naming")
+                    risk_score += 0.3
+
+                # Check upload timestamps for rapid succession
+                upload_times = sorted([p.upload_timestamp for p in user_packages])
+                if len(upload_times) >= 5:
+                    # Check if 5+ packages uploaded within 1 hour
+                    time_diff = (upload_times[-1] - upload_times[0]).total_seconds()
+                    if time_diff < 3600:  # 1 hour
+                        reasons.append(f"Rapid upload pattern: {len(user_packages)} packages in {time_diff/60:.1f} minutes")
+                        risk_score += 0.2
+
+            # Add to suspicious list if risk score > 0
+            if risk_score > 0:
+                suspicious_packages.append({
+                    "package_id": pkg.id,
+                    "name": pkg.name,
+                    "version": pkg.version,
+                    "uploaded_by": pkg.uploaded_by,
+                    "upload_timestamp": pkg.upload_timestamp.isoformat(),
+                    "risk_score": min(risk_score, 1.0),  # Cap at 1.0
+                    "reasons": reasons
+                })
+
+        # Sort by risk score (highest first)
+        suspicious_packages.sort(key=lambda x: x["risk_score"], reverse=True)
+
+        return jsonify(suspicious_packages), 200
+
+    except Exception as e:
+        logger.error(f"Package confusion audit failed: {str(e)}")
+        return jsonify({"error": "Failed to perform package confusion audit"}), 500
+
+
 if __name__ == "__main__":
     initialize_default_token()
     initialize_default_admin_user()
