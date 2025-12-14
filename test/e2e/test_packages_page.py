@@ -177,3 +177,110 @@ def test_model_packages_page_lists_and_filters_packages(
     browser.find_element(By.CSS_SELECTOR, "#search-form button[type='submit']").click()
 
     _wait_for_no_results(browser)
+
+
+@pytest.mark.e2e
+def test_packages_page_sorting_functionality(
+    browser: webdriver.Chrome,
+) -> None:
+    """Test that sorting functionality works correctly."""
+    # Reset registry state and create sample packages
+    requests.delete(f"{BASE_URL}/reset", timeout=5)
+    _create_package("Alpha Model", "1.0.0", "https://example.com/alpha")
+    _create_package("Beta Model", "2.0.0", "https://example.com/beta")
+    _create_package("Gamma Model", "0.5.0", "https://example.com/gamma")
+
+    browser.get(f"{BASE_URL}/")
+
+    # Wait for packages to load
+    package_names = _wait_for_package_cards(browser, minimum=3)
+    assert len(package_names) >= 3
+
+    # Test alphabetical sorting
+    sort_field = browser.find_element(By.ID, "sort-field")
+    sort_order = browser.find_element(By.ID, "sort-order")
+    
+    # Set to alphabetical ascending
+    sort_field.send_keys("alpha")
+    sort_order.send_keys("ascending")
+    browser.find_element(By.CSS_SELECTOR, "#search-form button[type='submit']").click()
+    
+    # Wait for sorted results
+    sorted_names = _wait_for_package_cards(browser, minimum=3)
+    # Should be alphabetically sorted
+    assert sorted_names[0] == "Alpha Model"
+
+
+@pytest.mark.e2e
+def test_packages_page_pagination(
+    browser: webdriver.Chrome,
+) -> None:
+    """Test that pagination works when there are many packages."""
+    # Reset registry and create multiple packages
+    requests.delete(f"{BASE_URL}/reset", timeout=5)
+    for i in range(15):
+        _create_package(f"Model {i+1}", f"{i+1}.0.0", f"https://example.com/model{i+1}")
+
+    browser.get(f"{BASE_URL}/")
+
+    # Wait for packages to load
+    package_names = _wait_for_package_cards(browser, minimum=10)
+    assert len(package_names) >= 10
+
+    # Check pagination container exists
+    pagination = browser.find_element(By.ID, "pagination-container")
+    assert pagination is not None
+
+
+@pytest.mark.e2e
+def test_packages_page_search_filters(
+    browser: webdriver.Chrome,
+) -> None:
+    """Test that search filters (version, sort, limit) work correctly."""
+    # Reset registry state and create sample packages
+    requests.delete(f"{BASE_URL}/reset", timeout=5)
+    _create_package("Test Model", "1.0.0", "https://example.com/test")
+    _create_package("Test Model", "2.0.0", "https://example.com/test2")
+
+    browser.get(f"{BASE_URL}/")
+
+    # Wait for packages to load
+    _wait_for_package_cards(browser, minimum=2)
+
+    # Filter by version
+    version_input = browser.find_element(By.ID, "search-version")
+    version_input.clear()
+    version_input.send_keys("1.0.0")
+    browser.find_element(By.CSS_SELECTOR, "#search-form button[type='submit']").click()
+
+    # Should filter to one result
+    filtered_names = _wait_for_package_cards(browser, minimum=1)
+    assert len(filtered_names) == 1
+
+
+@pytest.mark.e2e
+def test_packages_page_accessibility_features(
+    browser: webdriver.Chrome,
+) -> None:
+    """Test accessibility features on the packages page."""
+    browser.get(f"{BASE_URL}/")
+
+    # Check search form accessibility
+    search_form = browser.find_element(By.ID, "search-form")
+    assert search_form.get_attribute("role") == "search"
+    assert search_form.get_attribute("aria-label") == "Search packages"
+
+    # Check search input accessibility
+    search_input = browser.find_element(By.ID, "search-query")
+    assert search_input.get_attribute("aria-label") == "Search query"
+    assert search_input.get_attribute("aria-describedby") is not None
+
+    # Check loading indicator accessibility
+    loading_indicator = browser.find_element(By.ID, "loading-indicator")
+    assert loading_indicator.get_attribute("role") == "status"
+    assert loading_indicator.get_attribute("aria-live") == "polite"
+
+    # Check packages container accessibility
+    packages_container = browser.find_element(By.ID, "packages-container")
+    assert packages_container.get_attribute("role") == "region"
+    assert packages_container.get_attribute("aria-label") == "Package list"
