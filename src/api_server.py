@@ -15,6 +15,9 @@ import zipfile
 import tempfile
 import re
 import time
+import base64
+import boto3
+from botocore.exceptions import ClientError, NoCredentialsError
 
 from registry_models import Package
 from storage import storage
@@ -90,6 +93,13 @@ _valid_tokens = set()
 
 DEFAULT_TOKEN = "bearer default-admin-token"
 
+# S3 configuration for package content storage
+# PACKAGE_STORAGE_BUCKET: S3 bucket name for storing package content (optional)
+# If not set, packages are created without S3 keys (backward compatible)
+# Package content is uploaded to S3 when the 'content' field is provided in package creation requests
+_package_s3_bucket = os.environ.get("PACKAGE_STORAGE_BUCKET")
+_package_s3_client = None
+
 
 def initialize_default_token():
     """Initialize the default admin token for the reset/initial state.
@@ -117,6 +127,102 @@ def initialize_default_admin_user():
         f"Default admin user '{DEFAULT_USERNAME}' not found. "
         "It should be created during storage initialization from S3 or environment variable."
     )
+
+
+def _get_package_s3_client():
+    """Get or initialize S3 client for package content storage.
+    
+    Returns:
+        boto3.client or None: S3 client if bucket is configured, None otherwise
+    """
+    global _package_s3_client
+    
+    if not _package_s3_bucket:
+        return None
+    
+    if _package_s3_client is None:
+        try:
+            _package_s3_client = boto3.client('s3')
+            logger.info(f"S3 client initialized for package storage bucket: {_package_s3_bucket}")
+        except (NoCredentialsError, Exception) as e:
+            logger.warning(f"Failed to initialize S3 client for package storage: {e}")
+            return None
+    
+    return _package_s3_client
+
+
+def _decode_package_content(content: str) -> bytes:
+    """Decode package content from string to bytes.
+    
+    Attempts to decode base64 if content appears to be base64-encoded.
+    Otherwise treats as plain text and encodes to bytes.
+    
+    Args:
+        content: Content string (may be base64-encoded or plain text)
+        
+    Returns:
+        bytes: Decoded content as bytes
+    """
+    if not content:
+        return b""
+    
+    # Try to decode as base64 first
+    try:
+        # Remove whitespace and check if it looks like base64
+        content_clean = content.strip().replace('\n', '').replace('\r', '')
+        if len(content_clean) > 0 and len(content_clean) % 4 == 0:
+            decoded = base64.b64decode(content_clean, validate=True)
+            logger.debug("Content decoded as base64")
+            return decoded
+    except Exception:
+        # Not base64, treat as plain text
+        pass
+    
+    # Treat as plain text and encode to bytes
+    try:
+        return content.encode('utf-8')
+    except Exception as e:
+        logger.warning(f"Failed to encode content to bytes: {e}")
+        return content.encode('utf-8', errors='ignore')
+
+
+def _upload_package_content_to_s3(package_id: str, content: bytes, content_type: str = "application/octet-stream") -> Optional[str]:
+    """Upload package content to S3.
+    
+    Args:
+        package_id: Unique package identifier (UUID)
+        content: Content bytes to upload
+        content_type: MIME type of content (default: application/octet-stream)
+        
+    Returns:
+        Optional[str]: S3 key if upload successful, None otherwise
+    """
+    if not content or len(content) == 0:
+        return None
+    
+    s3_client = _get_package_s3_client()
+    if not s3_client or not _package_s3_bucket:
+        logger.debug("Package storage S3 bucket not configured, skipping upload")
+        return None
+    
+    # Generate S3 key
+    s3_key = f"packages/{package_id}/content"
+    
+    try:
+        s3_client.put_object(
+            Bucket=_package_s3_bucket,
+            Key=s3_key,
+            Body=content,
+            ContentType=content_type
+        )
+        logger.info(f"Package content uploaded to S3: {s3_key} ({len(content)} bytes)")
+        return s3_key
+    except ClientError as e:
+        logger.error(f"Failed to upload package content to S3: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error uploading package content to S3: {e}")
+        return None
 
 
 def check_auth_header():
@@ -646,11 +752,23 @@ def create_package():
     if not isinstance(metadata, dict):
         return jsonify({"error": "metadata must be a dictionary"}), 400
 
-    # Calculate size_bytes from content
-    size_bytes = len(content.encode("utf-8")) if content else 0
-
     # Generate package ID
     package_id = str(uuid.uuid4())
+
+    # Upload content to S3 if provided
+    s3_key = None
+    if content:
+        try:
+            content_bytes = _decode_package_content(content)
+            if content_bytes:
+                s3_key = _upload_package_content_to_s3(package_id, content_bytes)
+                if not s3_key:
+                    logger.warning(f"Failed to upload content to S3 for package {package_id}, continuing without S3 storage")
+        except Exception as e:
+            logger.error(f"Error processing content for S3 upload: {e}, continuing without S3 storage")
+
+    # Calculate size_bytes from content
+    size_bytes = len(content.encode("utf-8")) if content else 0
 
     # Infer artifact type from metadata URL
     artifact_type = "model"  # default
@@ -667,7 +785,7 @@ def create_package():
         upload_timestamp=datetime.now(timezone.utc),
         size_bytes=size_bytes,
         metadata=metadata,
-        s3_key=None,
+        s3_key=s3_key,
     )
 
     # Store package
@@ -2327,6 +2445,22 @@ def ingest_upload():
                 if "url" in metadata:
                     artifact_type = infer_artifact_type_from_url(metadata["url"])
 
+                # Upload content to S3 if provided
+                content = pkg_data.get("content", "")
+                s3_key = None
+                if content:
+                    try:
+                        content_bytes = _decode_package_content(content)
+                        if content_bytes:
+                            s3_key = _upload_package_content_to_s3(package_id, content_bytes)
+                            if not s3_key:
+                                logger.warning(f"Failed to upload content to S3 for package {package_id}, continuing without S3 storage")
+                    except Exception as e:
+                        logger.error(f"Error processing content for S3 upload: {e}, continuing without S3 storage")
+
+                # Calculate size_bytes from content
+                size_bytes = len(content.encode("utf-8")) if content else 0
+
                 package = Package(
                     id=package_id,
                     artifact_type=artifact_type,
@@ -2334,9 +2468,9 @@ def ingest_upload():
                     version=pkg_data["version"],
                     uploaded_by=DEFAULT_USERNAME,
                     upload_timestamp=datetime.now(timezone.utc),
-                    size_bytes=0,
+                    size_bytes=size_bytes,
                     metadata=metadata,
-                    s3_key=None,
+                    s3_key=s3_key,
                 )
 
                 storage.create_package(package)
