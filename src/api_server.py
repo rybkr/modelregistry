@@ -143,12 +143,12 @@ def _get_package_s3_client():
     
     if _package_s3_client is None:
         try:
-            # Configure S3 client with timeouts to prevent hanging
+            # Configure S3 client with aggressive timeouts to prevent hanging
             s3_config = Config(
-                connect_timeout=5,
-                read_timeout=10,
+                connect_timeout=2,
+                read_timeout=5,
                 retries={
-                    'max_attempts': 2,
+                    'max_attempts': 1,
                     'mode': 'standard'
                 }
             )
@@ -588,7 +588,19 @@ def health():
             - timestamp (str): Current UTC timestamp in ISO format
             - packages_count (int): Total number of packages in the registry
     """
-    packages_count = len(storage.list_packages(offset=0, limit=10000))
+    # Fast health check - don't count all packages if there are many
+    # Just verify storage is accessible
+    try:
+        packages_count = len(storage.list_packages(offset=0, limit=1000))
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return jsonify(
+            {
+                "status": "unhealthy",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "error": str(e)
+            }
+        ), 503
     
     return jsonify(
         {

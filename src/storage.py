@@ -154,12 +154,13 @@ class RegistryStorage:
         self._s3_bucket = os.environ.get("USER_STORAGE_BUCKET")
         self._s3_key = "users/users.json"
         try:
-            # Configure S3 client with timeouts to prevent hanging
+            # Configure S3 client with aggressive timeouts to prevent hanging
+            # Reduced timeouts for faster failure during startup
             s3_config = Config(
-                connect_timeout=5,
-                read_timeout=10,
+                connect_timeout=2,
+                read_timeout=5,
                 retries={
-                    'max_attempts': 2,
+                    'max_attempts': 1,
                     'mode': 'standard'
                 }
             )
@@ -168,14 +169,20 @@ class RegistryStorage:
             logger.warning(f"Failed to initialize S3 client: {e}. S3 operations will be disabled.")
             self._s3_client = None
         
-        # Load users from S3 if bucket is configured
+        # Load users from S3 if bucket is configured (with timeout protection)
+        # Try S3 first, but if it fails or times out, fall back to default admin
         if self._s3_bucket and self._s3_client:
-            loaded_users = self._load_users_from_s3()
-            if loaded_users:
-                self.users = loaded_users
-                logger.info(f"Loaded {len(self.users)} users from S3")
-            else:
-                # S3 file doesn't exist, create default admin from env var
+            try:
+                loaded_users = self._load_users_from_s3()
+                if loaded_users:
+                    self.users = loaded_users
+                    logger.info(f"Loaded {len(self.users)} users from S3")
+                else:
+                    # S3 file doesn't exist, create default admin from env var
+                    self._create_default_admin_from_env()
+            except Exception as e:
+                # S3 load failed or timed out - create default admin so app can start
+                logger.warning(f"Failed to load users from S3 during startup: {e}. Creating default admin from environment variable.")
                 self._create_default_admin_from_env()
         else:
             # No S3 configured, create default admin from env var
