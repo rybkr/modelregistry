@@ -1,4 +1,10 @@
-# Additional tests to increase coverage for api_server.py
+"""Tests for API CRUD operations and endpoints.
+
+This module contains comprehensive tests for the REST API endpoints including
+package creation, retrieval, listing, deletion, and health checks. Tests
+cover both successful operations and error handling scenarios.
+"""
+
 import io
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
@@ -8,6 +14,11 @@ from storage import storage
 
 
 def test_health_endpoint(client):
+    """Test that the health endpoint returns correct status and package count.
+
+    Args:
+        client: Flask test client fixture
+    """
     response = client.get("/api/health")
     assert response.status_code == 200
     data = response.get_json()
@@ -20,6 +31,11 @@ def test_health_endpoint(client):
 
 
 def test_root_endpoint(client):
+    """Test that the root endpoint returns API information.
+
+    Args:
+        client: Flask test client fixture
+    """
     response = client.get("/")
     assert response.status_code == 200
     data = response.get_json()
@@ -27,6 +43,11 @@ def test_root_endpoint(client):
 
 
 def test_upload_package(client):
+    """Test successful package upload via POST /api/packages.
+
+    Args:
+        client: Flask test client fixture
+    """
     package_data = {
         "name": "test-model",
         "version": "1.0.0",
@@ -44,6 +65,11 @@ def test_upload_package(client):
 
 
 def test_list_packages(client):
+    """Test listing packages via GET /api/packages.
+
+    Args:
+        client: Flask test client fixture
+    """
     package_data = {"name": "test-model", "version": "1.0.0"}
     client.post("/api/packages", json=package_data)
 

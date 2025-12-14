@@ -1,3 +1,11 @@
+"""Size metric for evaluating model file size and device compatibility.
+
+This module implements the Size metric, which calculates the total size of model
+files (weights, binaries) and scores them against predefined device memory budgets
+(Raspberry Pi, Jetson Nano, Desktop PC, AWS Server). Uses a smoothstep function
+to compute compatibility scores for each device type.
+"""
+
 import statistics
 import time
 from typing import Any, Dict

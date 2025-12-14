@@ -1,3 +1,11 @@
+"""Metrics computation engine for model evaluation.
+
+This module provides the core functionality for computing all quality metrics
+for a model. It orchestrates metric computation, handles errors gracefully,
+and provides utilities for flattening metric results into dictionary format
+for serialization (e.g., NDJSON output).
+"""
+
 import time
 from typing import Any, Dict
 
@@ -43,12 +51,19 @@ def compute_all_metrics(
 ) -> dict[str, Metric]:
     """Compute metrics for a model sequentially.
 
+    Executes all registered metrics (or a subset if specified) for a given model.
+    Metrics are computed sequentially to avoid threading/multiprocessing issues.
+    Each metric computation is wrapped in error handling to prevent one failure
+    from stopping the entire evaluation.
+
     Args:
-        model: The model to evaluate
-        include: Optional set of metric names to compute. If None, computes all metrics
+        model: The model to evaluate with all metrics
+        include: Optional set of metric names to compute. If None, computes all
+            registered metrics from ALL_METRICS
 
     Returns:
-        dict[str, Metric]: Dictionary mapping metric names to computed Metric objects
+        dict[str, Metric]: Dictionary mapping metric names to computed Metric
+            objects. Each metric contains value, latency_ms, and details.
     """
     results: dict[str, Metric] = {}
     metrics = [m for m in ALL_METRICS if include is None or m.name in include]
@@ -64,11 +79,17 @@ def compute_all_metrics(
 def flatten_to_ndjson(results: Dict[str, Metric]) -> Dict[str, Any]:
     """Flatten metric results to a simple dictionary for NDJSON output.
 
+    Converts a dictionary of Metric objects into a flat dictionary suitable
+    for serialization to NDJSON (newline-delimited JSON) format. Each metric's
+    value and latency are extracted and stored with standardized naming.
+
     Args:
-        results: Dictionary of computed metrics
+        results: Dictionary mapping metric names to Metric objects
 
     Returns:
-        dict: Flattened dictionary with metric values and latencies
+        Dict[str, Any]: Flattened dictionary with keys like:
+            - "{metric_name}": metric value
+            - "{metric_name}_latency": computation latency in milliseconds
     """
     out: Dict[str, Any] = {}
     for metric in results.values():

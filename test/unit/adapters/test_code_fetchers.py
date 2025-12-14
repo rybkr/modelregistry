@@ -1,3 +1,10 @@
+"""Unit tests for code repository fetchers.
+
+This module contains unit tests for code fetching functionality, including
+HuggingFace Spaces, GitHub, and GitLab repository access. Tests cover
+file downloading, repository snapshot handling, and error scenarios.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

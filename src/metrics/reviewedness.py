@@ -1,3 +1,12 @@
+"""Reviewedness metric for evaluating code review coverage and quality.
+
+This module implements the Reviewedness metric, which assesses the quality and
+coverage of code reviews in a repository. It analyzes GitHub pull requests to
+determine the percentage of code that has been reviewed, the quality of reviews
+(meaningful vs. superficial), and the overall code review practices of the project.
+Higher scores indicate better code review coverage and quality.
+"""
+
 from __future__ import annotations
 
 import os
@@ -20,7 +29,15 @@ load_dotenv("config.env")
 
 
 def try_readme(resource: _BaseResource, filename: str = "README.md") -> Optional[str]:
-    """Attempt to fetch README.md via the resource's RepoView."""
+    """Attempt to fetch README.md via the resource's RepoView.
+
+    Args:
+        resource: Resource instance to read README from
+        filename: Name of README file (default: "README.md")
+
+    Returns:
+        Optional[str]: README content or None if not found/readable
+    """
     try:
         with resource.open_files(allow_patterns=[filename]) as repo:
             if repo.exists(filename):

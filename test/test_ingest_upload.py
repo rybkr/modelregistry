@@ -1,3 +1,10 @@
+"""Tests for package ingestion and file upload functionality.
+
+This module contains tests for uploading packages via CSV/JSON files and
+ingesting models from external sources. Tests cover file parsing, validation,
+error handling, and bulk import operations.
+"""
+
 import pytest
 import sys
 import os

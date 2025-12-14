@@ -1,3 +1,10 @@
+"""Unit tests for HuggingFace client adapter.
+
+This module contains unit tests for the HFClient class, which handles
+communication with the HuggingFace API. Tests cover metadata fetching
+for models, datasets, and spaces, error handling, and response parsing.
+"""
+
 from test.helpers.builders import make_response
 from unittest.mock import MagicMock, patch
 

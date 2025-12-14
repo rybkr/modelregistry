@@ -1,3 +1,11 @@
+"""Unit tests for Reviewedness metric.
+
+This module contains unit tests for the Reviewedness metric, which evaluates
+code review coverage and quality in a repository. Tests cover GitHub URL
+extraction, pull request analysis, code review detection, meaningful review
+assessment, lines of code counting, and overall reviewedness scoring.
+"""
+
 from __future__ import annotations
 
 from contextlib import contextmanager

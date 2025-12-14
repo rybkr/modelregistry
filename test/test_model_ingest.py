@@ -1,3 +1,11 @@
+"""Tests for model ingestion with metric evaluation.
+
+This module contains tests for the model ingestion endpoint, which evaluates
+models using quality metrics and only ingests models that meet minimum quality
+thresholds. Tests cover metric computation, threshold checking, and ingestion
+decision logic.
+"""
+
 import pytest
 import sys
 import os
@@ -20,7 +28,24 @@ def create_mock_metrics(
     performance_score=0.8,
     size_scores=None,
 ):
-    """Helper to create mock metric results."""
+    """Helper to create mock metric results for testing.
+
+    Creates a dictionary of Metric objects with specified scores for use in
+    testing model ingestion logic.
+
+    Args:
+        license_score: License metric score (default: 0.8)
+        ramp_up_score: Ramp-up time metric score (default: 0.7)
+        bus_factor_score: Bus factor metric score (default: 0.6)
+        dataset_and_code_score: Dataset and code availability score (default: 0.75)
+        dataset_quality_score: Dataset quality score (default: 0.65)
+        code_quality_score: Code quality score (default: 0.7)
+        performance_score: Performance claims score (default: 0.8)
+        size_scores: Dictionary of device size scores (default: None, uses defaults)
+
+    Returns:
+        dict[str, Metric]: Dictionary mapping metric names to Metric objects
+    """
     if size_scores is None:
         size_scores = {
             "raspberry_pi": 0.6,

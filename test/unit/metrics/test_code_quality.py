@@ -1,3 +1,11 @@
+"""Unit tests for CodeQuality metric.
+
+This module contains unit tests for the CodeQuality metric, which evaluates
+code quality through static analysis (flake8, mypy) and repository popularity
+signals. Tests cover linting execution, error counting, popularity scoring,
+and overall metric computation.
+"""
+
 from __future__ import annotations
 
 from contextlib import contextmanager

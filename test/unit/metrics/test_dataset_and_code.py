@@ -1,3 +1,11 @@
+"""Unit tests for DatasetAndCode metric.
+
+This module contains unit tests for the DatasetAndCode metric, which uses
+LLM-based semantic analysis to detect mentions of datasets and code resources
+in model documentation. Tests cover README parsing, LLM interaction, and
+scoring logic for dataset and code availability.
+"""
+
 from __future__ import annotations
 
 from contextlib import contextmanager

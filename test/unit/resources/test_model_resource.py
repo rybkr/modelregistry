@@ -1,3 +1,10 @@
+"""Unit tests for ModelResource class.
+
+This module contains unit tests for the ModelResource class, which handles
+access to HuggingFace model repositories. Tests cover metadata fetching,
+file access, caching behavior, and context manager usage.
+"""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch

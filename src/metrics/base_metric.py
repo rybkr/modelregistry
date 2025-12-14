@@ -1,3 +1,11 @@
+"""Base metric class for quality evaluation metrics.
+
+This module defines the abstract base class for all quality metrics in the
+Model Registry. It provides a standard interface for metric computation with
+support for both single numerical scores and multi-component scores (dictionaries).
+All metrics track their computed value, computation latency, and additional details.
+"""
+
 from typing import Any, Dict, Union
 
 from models import Model
@@ -34,5 +42,16 @@ class Metric:
         self.details = {}
 
     def compute(self, model: Model) -> None:
-        """Subclasses must override this with their calculation."""
+        """Compute the metric for the given model.
+
+        Subclasses must override this method to implement their specific
+        metric calculation logic. The method should set self.value, self.latency_ms,
+        and self.details with the computation results.
+
+        Args:
+            model: The Model instance to evaluate
+
+        Raises:
+            NotImplementedError: Must be implemented by subclasses
+        """
         raise NotImplementedError

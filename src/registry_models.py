@@ -1,3 +1,11 @@
+"""Registry data models for packages, users, and authentication.
+
+This module defines the core data structures used by the Model Registry,
+including Package, User, and TokenInfo classes. It provides functionality
+for version comparison, package serialization, and user/token management.
+All models use dataclasses for simplicity and type safety.
+"""
+
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone

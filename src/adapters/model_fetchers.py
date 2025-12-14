@@ -1,3 +1,12 @@
+"""Model fetcher for downloading and accessing HuggingFace model repositories.
+
+This module provides the HFModelFetcher class and _BaseSnapshotFetcher base class
+for downloading snapshots of HuggingFace model repositories. It handles file
+filtering, large file removal, and provides access to repository files through
+a RepoView interface. Model weight files are excluded to avoid downloading
+hundreds of GB of data.
+"""
+
 from __future__ import annotations
 
 import os
@@ -111,8 +120,11 @@ class _BaseSnapshotFetcher(AbstractContextManager[RepoView]):
     def _remove_large_files(self, local_path: Path) -> None:
         """Remove files exceeding the maximum allowed size from the repository snapshot.
 
+        Recursively scans the repository directory and deletes any files that
+        exceed MAX_FILE_BYTES to prevent excessive disk usage.
+
         Args:
-            local_path (Path): The path to the local repository snapshot.
+            local_path: The path to the local repository snapshot directory
         """
         for p in local_path.rglob("*"):
             if p.is_file() and p.stat().st_size > MAX_FILE_BYTES:

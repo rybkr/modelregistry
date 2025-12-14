@@ -1,3 +1,10 @@
+"""Unit tests for URLHandler class.
+
+This module contains unit tests for the URLHandler class, which is responsible
+for parsing URL files and creating Model instances from code, dataset, and model
+URLs. Tests cover URL parsing, Model construction, and shared dataset detection.
+"""
+
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -43,7 +50,11 @@ class TestURLHandler:
         assert second.model.url == "https://huggingface.co/org/model2"
 
     def test_check_for_shared_dataset_returns_dataset(self) -> None:
-        """Return previous dataset when README references it."""
+        """Test that shared dataset is detected when README references it.
+
+        Verifies that check_for_shared_dataset correctly identifies when a
+        model's README mentions a dataset from a previous model.
+        """
         handler = URLHandler()
         shared_dataset = DatasetResource("https://huggingface.co/datasets/org/data")
         prev_model = Model(

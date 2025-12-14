@@ -1,3 +1,11 @@
+"""Dataset resource for accessing HuggingFace dataset information and files.
+
+This module provides the DatasetResource class, which represents a dataset
+resource associated with a machine learning model. It handles fetching
+metadata from HuggingFace datasets and provides access to dataset repository
+files through a RepoView interface.
+"""
+
 from typing import Any, ContextManager, Iterable, Optional
 
 from adapters.client import HFClient
@@ -30,8 +38,12 @@ class DatasetResource(_BaseResource):
     def fetch_metadata(self) -> Any:
         """Retrieve metadata associated with the dataset resource.
 
+        Fetches dataset metadata from HuggingFace API on first call and caches
+        it for subsequent calls. Metadata includes dataset description, license,
+        size, and other dataset card information.
+
         Returns:
-            Any: JSON object with models metadata.
+            Any: Dictionary containing dataset metadata from HuggingFace API
         """
         if self.metadata is None:
             self.metadata = self._client.get_dataset_metadata(self._repo_id)
@@ -43,8 +55,15 @@ class DatasetResource(_BaseResource):
     ) -> ContextManager[RepoView]:
         """Opens and provides access to files from the dataset repository.
 
+        Returns a context manager that allows reading files from the HuggingFace
+        dataset repository. Files can be filtered by patterns if specified.
+
+        Args:
+            allow_patterns: Optional iterable of file patterns to allow access to
+                (e.g., ["*.csv", "*.json", "README.md"])
+
         Returns:
             ContextManager[RepoView]: A context manager that provides access to the
-                repository files through a RepoView interface.
+                repository files through a RepoView interface
         """
         return HFDatasetFetcher(self._repo_id, allow_patterns=allow_patterns)

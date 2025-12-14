@@ -1,3 +1,11 @@
+"""Unit tests for storage layer functionality.
+
+This module contains comprehensive unit tests for the RegistryStorage class
+and related utility functions. Tests cover CRUD operations, search functionality
+with regex support, user and token management, activity logging, and security
+features like ReDoS protection.
+"""
+
 from __future__ import annotations
 
 import base64

@@ -1,3 +1,10 @@
+"""Unit tests for DatasetResource class.
+
+This module contains unit tests for the DatasetResource class, which handles
+access to HuggingFace dataset repositories. Tests cover metadata fetching,
+file access, caching behavior, and context manager usage.
+"""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch

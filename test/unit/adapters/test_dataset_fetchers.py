@@ -1,3 +1,10 @@
+"""Unit tests for dataset fetchers.
+
+This module contains unit tests for the HFDatasetFetcher class, which handles
+downloading and accessing files from HuggingFace dataset repositories.
+Tests cover snapshot downloading, file reading, and context manager behavior.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

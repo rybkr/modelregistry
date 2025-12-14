@@ -1,3 +1,11 @@
+"""Unit tests for RepoView class.
+
+This module contains unit tests for the RepoView class, which provides
+a unified interface for reading files from various repository types.
+Tests cover file existence checking, text/JSON reading, file size queries,
+and glob pattern matching.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

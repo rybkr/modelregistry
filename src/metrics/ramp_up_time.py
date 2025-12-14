@@ -1,3 +1,11 @@
+"""Ramp-Up Time metric for evaluating ease of getting started.
+
+This module implements the RampUpTime metric, which measures how quickly a new
+user can start using a model repository. It evaluates documentation quality,
+presence of code examples, installation instructions, and available model files
+to determine the learning curve and setup complexity.
+"""
+
 import time
 from typing import Dict
 
@@ -26,7 +34,14 @@ class RampUpTime(Metric):
         super().__init__(name="ramp_up_time")
 
     def _open_readme(self, model: Model) -> str:
-        """Return the README contents if it exists, otherwise an empty string."""
+        """Return the README contents if it exists, otherwise an empty string.
+
+        Args:
+            model: Model instance to read README from
+
+        Returns:
+            str: README content or empty string if not found/readable
+        """
         readme: str = ""
         try:
             with model.model.open_files() as files:
@@ -37,7 +52,17 @@ class RampUpTime(Metric):
         return readme
 
     def _check_for_example_code(self, readme: str) -> bool:
-        """Check if README contains actual code examples."""
+        """Check if README contains actual code examples.
+
+        Looks for code blocks (```) and import statements to determine if
+        the README includes executable code examples.
+
+        Args:
+            readme: README content to analyze
+
+        Returns:
+            bool: True if code blocks and import statements are found
+        """
         has_code_blocks = "```" in readme
 
         readme_lower = readme.lower()

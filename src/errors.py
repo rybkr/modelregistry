@@ -1,3 +1,11 @@
+"""Error handling and exception classes for the Model Registry.
+
+This module provides structured error handling with custom exception types
+and error codes. It includes utilities for converting HTTP responses from
+external APIs (like HuggingFace) into structured application errors with
+appropriate error codes and sanitized context information.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -67,11 +75,24 @@ def http_error_from_hf_response(
 ) -> AppError:
     """Create an AppError instance from an HTTP response from the Hugging Face API.
 
+    Converts HTTP error responses from the HuggingFace API into structured
+    AppError instances with appropriate error codes based on status codes.
+    Automatically extracts request IDs from headers and truncates response
+    bodies for safe logging.
+
     Args:
-        url:     The URL of the API request.
-        status:  The HTTP status code of the response.
-        body:    The body of the response, if available.
-        headers: The headers of the response, if available.
+        url: The URL of the API request that failed
+        status: The HTTP status code of the response
+        body: The response body, if available (will be truncated to 300 chars)
+        headers: The response headers, if available (used to extract request IDs)
+
+    Returns:
+        AppError: Structured error with appropriate code:
+            - RATE_LIMIT for 429 status
+            - AUTH_ERROR for 401/403 status
+            - NOT_FOUND for 404 status
+            - SERVER_ERROR for 5xx status
+            - HTTP_ERROR for other 4xx status codes
     """
     snippet = (body or "").strip().replace("\n", " ")
     if len(snippet) > 300:

@@ -1,3 +1,11 @@
+"""Bus Factor metric for evaluating project sustainability.
+
+This module implements the Bus Factor metric, which measures the risk of project
+abandonment by combining the number of unique contributors with the recency of
+updates. Projects with more contributors and recent activity receive higher scores,
+indicating lower risk of abandonment if key contributors leave.
+"""
+
 import math
 import time
 from datetime import datetime, timezone
@@ -9,13 +17,26 @@ from models import Model
 
 
 class BusFactor(Metric):
-    """Calculates the Bus Factor score (contributors + recency only)."""
+    """Calculates the Bus Factor score (contributors + recency only).
+
+    Combines contributor count and update recency to assess project sustainability.
+    Higher scores indicate lower risk of abandonment.
+    """
 
     def __init__(self) -> None:
+        """Initialize the BusFactor metric."""
         super().__init__("bus_factor")
 
     def _get_last_modified(self, model: Model) -> Dict[str, Optional[str]]:
-        """Fetch last modified dates from model, dataset, and code."""
+        """Fetch last modified dates from model, dataset, and code resources.
+
+        Args:
+            model: Model instance to extract modification dates from
+
+        Returns:
+            Dict with keys 'model', 'dataset', 'code' containing ISO date strings
+            or None if unavailable
+        """
         last_model = None
         last_dataset = None
         last_code = None
@@ -42,7 +63,17 @@ class BusFactor(Metric):
         return {"model": last_model, "dataset": last_dataset, "code": last_code}
 
     def _get_contributors(self, model: Model) -> int:
-        """Fetch number of contributors from code or model metadata."""
+        """Fetch number of contributors from code or model metadata.
+
+        Attempts to get contributor count from code repository (GitHub) first,
+        then falls back to model metadata. Returns 1 as minimum.
+
+        Args:
+            model: Model instance to extract contributor count from
+
+        Returns:
+            int: Number of unique contributors (minimum 1)
+        """
         contributors: int = 1
 
         # Try code first (most reliable)

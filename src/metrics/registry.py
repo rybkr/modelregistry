@@ -1,3 +1,10 @@
+"""Registry of all quality metrics for model evaluation.
+
+This module maintains a centralized list of all available metrics that can be
+computed for models. It provides ALL_METRICS list and METRICS_BY_NAME dictionary
+for easy access to metric instances by the metrics engine.
+"""
+
 from metrics.base_metric import Metric
 from metrics.bus_factor import BusFactor
 from metrics.code_quality import CodeQuality

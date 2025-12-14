@@ -1,3 +1,11 @@
+"""Code Quality metric for evaluating code maintainability and style.
+
+This module implements the CodeQuality metric, which assesses code quality by
+running static analysis tools (flake8 for style/linting, mypy for type checking)
+on linked code repositories. It combines linting results with repository popularity
+signals (GitHub stars, HuggingFace likes) to produce an overall code quality score.
+"""
+
 from __future__ import annotations
 
 import subprocess
@@ -14,7 +22,15 @@ from resources.code_resource import CodeResource
 
 
 def try_readme(resource: _BaseResource, filename: str = "README.md") -> Optional[str]:
-    """Attempt to fetch README.md via the resource's RepoView."""
+    """Attempt to fetch README.md via the resource's RepoView.
+
+    Args:
+        resource: Resource instance to read README from
+        filename: Name of README file (default: "README.md")
+
+    Returns:
+        Optional[str]: README content or None if not found/readable
+    """
     try:
         with resource.open_files(allow_patterns=[filename]) as repo:
             if repo.exists(filename):
@@ -25,13 +41,30 @@ def try_readme(resource: _BaseResource, filename: str = "README.md") -> Optional
 
 
 class CodeQuality(Metric):
-    """Metric for code quality: flake8 + mypy + stars/likes."""
+    """Metric for code quality: flake8 + mypy + stars/likes.
+
+    Evaluates code quality through static analysis and popularity signals.
+    Combines linting results with repository engagement metrics.
+    """
 
     def __init__(self) -> None:
+        """Initialize the CodeQuality metric."""
         super().__init__(name="code_quality")
 
     def _run_linter(self, repo: RepoView, cmd: list[str]) -> float:
-        """Run a linter command in the given repository and compute a score."""
+        """Run a linter command in the given repository and compute a score.
+
+        Executes a linter command (e.g., flake8, mypy) and converts the
+        number of errors/warnings into a score (1.0 = no errors, decreasing
+        with more errors).
+
+        Args:
+            repo: RepoView instance representing the code repository
+            cmd: Command and arguments to run as a list
+
+        Returns:
+            float: Score from 0.0 to 1.0 based on linting results
+        """
         proc: subprocess.CompletedProcess[str] = subprocess.run(
             cmd,
             cwd=repo.root,
