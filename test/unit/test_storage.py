@@ -382,7 +382,7 @@ class TestRegistryStorage:
         assert len(results) == 0
 
     @patch("storage.requests.get")
-    @patch.dict("os.environ", {"GH_API_TOKEN": "test-token"})
+    @patch.dict("os.environ", {"GITHUB_TOKEN": "test-token"})
     def test_search_packages_regex_huggingface_readme(self, mock_get: MagicMock) -> None:
         """Test regex search fetching README from HuggingFace."""
         store = RegistryStorage()
@@ -408,7 +408,7 @@ class TestRegistryStorage:
         mock_get.assert_called_once()
 
     @patch("storage.requests.get")
-    @patch.dict("os.environ", {"GH_API_TOKEN": "test-token"})
+    @patch.dict("os.environ", {"GITHUB_TOKEN": "test-token"})
     def test_search_packages_regex_github_readme(self, mock_get: MagicMock) -> None:
         """Test regex search fetching README from GitHub."""
         store = RegistryStorage()
@@ -433,7 +433,7 @@ class TestRegistryStorage:
         assert len(results) == 1
 
     @patch("storage.requests.get")
-    @patch.dict("os.environ", {"GH_API_TOKEN": "test-token"})
+    @patch.dict("os.environ", {"GITHUB_TOKEN": "test-token"})
     def test_search_packages_regex_remote_readme_404(self, mock_get: MagicMock) -> None:
         """Test regex search when remote README returns 404."""
         store = RegistryStorage()
