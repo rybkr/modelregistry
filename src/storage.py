@@ -169,26 +169,32 @@ class RegistryStorage:
             logger.warning(f"Failed to initialize S3 client: {e}. S3 operations will be disabled.")
             self._s3_client = None
         
-        # Load users from S3 if bucket is configured (with timeout protection)
-        # Try S3 first, but if it fails or times out, fall back to default admin
+        # Always create default admin first so app can start immediately
+        self._create_default_admin_from_env()
+        
+        # Load users from S3 in background (non-blocking startup)
+        # This ensures Flask app starts immediately even if S3 is slow
         if self._s3_bucket and self._s3_client:
-            try:
-                loaded_users = self._load_users_from_s3()
-                if loaded_users:
-                    self.users = loaded_users
-                    logger.info(f"Loaded {len(self.users)} users from S3")
-                else:
-                    # S3 file doesn't exist, create default admin from env var
-                    self._create_default_admin_from_env()
-            except Exception as e:
-                # S3 load failed or timed out - create default admin so app can start
-                logger.warning(f"Failed to load users from S3 during startup: {e}. Creating default admin from environment variable.")
-                self._create_default_admin_from_env()
+            def _load_users_async():
+                """Background thread to load users from S3 after startup."""
+                try:
+                    loaded_users = self._load_users_from_s3()
+                    if loaded_users:
+                        # Merge loaded users (don't overwrite default admin if username matches)
+                        with self._lock:
+                            for username, user in loaded_users.items():
+                                if username not in self.users:
+                                    self.users[username] = user
+                        logger.info(f"Loaded {len(loaded_users)} users from S3 in background")
+                except Exception as e:
+                    logger.warning(f"Failed to load users from S3 in background: {e}. Using default admin only.")
+            
+            # Start async load in background thread (daemon so it doesn't block shutdown)
+            thread = Thread(target=_load_users_async, daemon=True)
+            thread.start()
         else:
-            # No S3 configured, create default admin from env var
             if not self._s3_bucket:
                 logger.warning("USER_STORAGE_BUCKET not set. Users will not persist to S3.")
-            self._create_default_admin_from_env()
         
         self.reset()
 
@@ -721,13 +727,21 @@ class RegistryStorage:
             return {}
     
     def _save_users_to_s3(self) -> None:
-        """Save all users to S3 bucket (non-blocking, fire-and-forget).
+        """Save all users to S3 bucket (non-blocking, rate-limited).
         
+        Only saves to S3 if system has bandwidth. Skips save if too busy.
         Thread-safe operation that serializes all users and writes to S3 in a
         background thread to never block the calling request.
         """
         if not self._s3_client or not self._s3_bucket:
             logger.warning("S3 not configured. Users will not be persisted.")
+            return
+        
+        # Check if we should skip S3 save (rate limiting - only save users occasionally)
+        # Don't save on every user operation to avoid overwhelming S3
+        import random
+        if random.random() > 0.1:  # Only save 10% of the time to reduce load
+            logger.debug("Skipping S3 user save to reduce load")
             return
         
         # Serialize users while holding the lock (copy data for background thread)

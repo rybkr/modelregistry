@@ -102,6 +102,11 @@ DEFAULT_TOKEN = "bearer default-admin-token"
 _package_s3_bucket = os.environ.get("PACKAGE_STORAGE_BUCKET")
 _package_s3_client = None
 
+# Rate limiting for S3 uploads - prevent overwhelming system during bulk uploads
+_max_concurrent_s3_uploads = 5  # Maximum concurrent S3 uploads
+_active_s3_uploads = 0
+_s3_upload_lock = threading.Lock()
+
 
 def initialize_default_token():
     """Initialize the default admin token for the reset/initial state.
@@ -198,11 +203,10 @@ def _decode_package_content(content: str) -> bytes:
 
 
 def _upload_package_to_s3(package_id: str, content: bytes = None, metadata: dict = None) -> Optional[str]:
-    """Upload package to S3 (non-blocking, fire-and-forget).
+    """Upload package to S3 (non-blocking, rate-limited).
     
-    Always creates an S3 entry for the package. If content is provided, uploads it.
-    Otherwise, creates a metadata file. This function returns immediately and
-    performs the S3 upload in a background thread to never block the request.
+    Only uploads to S3 if there's available bandwidth (not too many concurrent uploads).
+    If system is busy, skips S3 upload to prevent overwhelming the system.
     
     Args:
         package_id: Unique package identifier (UUID)
@@ -210,12 +214,21 @@ def _upload_package_to_s3(package_id: str, content: bytes = None, metadata: dict
         metadata: Package metadata to store (optional)
         
     Returns:
-        Optional[str]: S3 key (returned immediately, upload happens in background)
+        Optional[str]: S3 key if upload started, None if skipped due to rate limiting
     """
     s3_client = _get_package_s3_client()
     if not s3_client or not _package_s3_bucket:
         logger.warning(f"Package storage S3 bucket not configured or client unavailable. Bucket: {_package_s3_bucket}, Client: {s3_client is not None}")
         return None
+    
+    # Check if we have bandwidth for S3 upload (rate limiting)
+    global _active_s3_uploads
+    with _s3_upload_lock:
+        if _active_s3_uploads >= _max_concurrent_s3_uploads:
+            # Too many concurrent uploads, skip this one to prevent overwhelming system
+            logger.debug(f"Skipping S3 upload for package {package_id}: {_active_s3_uploads} concurrent uploads already in progress")
+            return None
+        _active_s3_uploads += 1
     
     # Generate S3 key
     s3_key = f"packages/{package_id}/content"
@@ -234,6 +247,7 @@ def _upload_package_to_s3(package_id: str, content: bytes = None, metadata: dict
     
     def _do_upload():
         """Background thread function to perform S3 upload."""
+        global _active_s3_uploads
         try:
             # Get a fresh S3 client in the thread (thread-safe)
             thread_s3_client = _get_package_s3_client()
@@ -256,6 +270,10 @@ def _upload_package_to_s3(package_id: str, content: bytes = None, metadata: dict
             logger.error(f"Failed to upload package to S3: {e}")
         except Exception as e:
             logger.error(f"Unexpected error uploading package to S3: {e}")
+        finally:
+            # Decrement active upload counter when done
+            with _s3_upload_lock:
+                _active_s3_uploads = max(0, _active_s3_uploads - 1)
     
     # Start upload in background thread (daemon so it doesn't block shutdown)
     thread = threading.Thread(target=_do_upload, daemon=True)
@@ -602,10 +620,12 @@ def health():
             - timestamp (str): Current UTC timestamp in ISO format
             - packages_count (int): Total number of packages in the registry
     """
-    # Fast health check - don't count all packages if there are many
-    # Just verify storage is accessible
+    # Ultra-fast health check - just verify storage is accessible
+    # Don't count packages (can be slow with many packages)
     try:
-        packages_count = len(storage.list_packages(offset=0, limit=1000))
+        # Just verify storage object exists and is accessible
+        _ = storage.packages
+        packages_count = len(storage.packages)  # Direct access, no method call overhead
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         return jsonify(
