@@ -35,21 +35,23 @@ a:not(.btn):visited {
     color: #6f42c1; /* Purple for visited links - maintains contrast */
 }
 
-/* Keep navbar links white (navbar-dark) */
+/* Keep navbar links white (navbar-dark) - WCAG 2.1 AA compliant */
+/* All navbar links must use pure white for sufficient contrast (4.5:1 minimum) */
 .navbar-dark .nav-link,
 .navbar-dark .nav-link:visited,
 .navbar-dark .nav-link:hover,
 .navbar-dark .nav-link:focus,
+.navbar-dark .nav-link.active,
+.navbar-dark .nav-link[aria-current="page"] {
+    color: #ffffff !important; /* Pure white for WCAG 2.1 AA compliance */
+}
+
+/* Navbar brand must use pure white for sufficient contrast (4.5:1 minimum) */
 .navbar-dark .navbar-brand,
 .navbar-dark .navbar-brand:visited,
 .navbar-dark .navbar-brand:hover,
 .navbar-dark .navbar-brand:focus {
-    color: rgba(255, 255, 255, 0.9) !important;
-}
-
-.navbar-dark .nav-link.active,
-.navbar-dark .nav-link[aria-current="page"] {
-    color: #ffffff !important;
+    color: #ffffff !important; /* Pure white for WCAG 2.1 AA compliance */
 }
 
 /* Ensure button text has sufficient contrast */
@@ -184,6 +186,19 @@ textarea:focus-visible {
 /* Footer */
 footer {
     margin-top: auto;
+}
+
+/* Footer text must have sufficient contrast for small text - WCAG 2.1 AA compliant */
+/* Small text requires 4.5:1 contrast ratio, darker gray ensures compliance */
+/* Target all text-muted elements in footer, including nested small tags */
+footer .text-muted,
+footer p.text-muted,
+footer .text-muted small,
+footer p.text-muted small,
+footer small.text-muted,
+footer .mb-0.text-muted,
+footer .mb-0.text-muted small {
+    color: #495057 !important; /* Darker gray (#495057) on light background exceeds 4.5:1 contrast ratio */
 }
 
 /* Ensure main content has proper spacing */
