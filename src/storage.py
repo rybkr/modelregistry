@@ -18,7 +18,7 @@ import base64
 from collections import Counter, deque
 from datetime import datetime, timedelta, timezone
 import os
-from threading import Lock, Thread
+from threading import Lock
 from typing import Dict, List, Optional, Tuple
 import regex as re
 import logging

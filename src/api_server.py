@@ -121,41 +121,6 @@ def initialize_default_admin_user():
     )
 
 
-def _decode_package_content(content: str) -> bytes:
-    """Decode package content from string to bytes.
-    
-    Attempts to decode base64 if content appears to be base64-encoded.
-    Otherwise treats as plain text and encodes to bytes.
-    
-    Args:
-        content: Content string (may be base64-encoded or plain text)
-        
-    Returns:
-        bytes: Decoded content as bytes
-    """
-    if not content:
-        return b""
-    
-    # Try to decode as base64 first
-    try:
-        # Remove whitespace and check if it looks like base64
-        content_clean = content.strip().replace('\n', '').replace('\r', '')
-        if len(content_clean) > 0 and len(content_clean) % 4 == 0:
-            decoded = base64.b64decode(content_clean, validate=True)
-            logger.debug("Content decoded as base64")
-            return decoded
-    except Exception:
-        # Not base64, treat as plain text
-        pass
-    
-    # Treat as plain text and encode to bytes
-    try:
-        return content.encode('utf-8')
-    except Exception as e:
-        logger.warning(f"Failed to encode content to bytes: {e}")
-        return content.encode('utf-8', errors='ignore')
-
-
 def check_auth_header():
     """Check if X-Authorization header is present and token is valid.
 
@@ -2386,7 +2351,7 @@ def ingest_upload():
                 content = pkg_data.get("content", "")
                 try:
                     if content:
-                        _decode_package_content(content)
+                        pass  # Content processing removed
                 except Exception as e:
                     logger.error(f"Error processing package: {e}")
 
