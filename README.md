@@ -544,10 +544,10 @@ See the project's contribution guidelines for information on:
 
 ## Contributors
 
-* [Noddie Mgbodille](https://github.com/nmgbodil)
-* [Will Ott](https://github.com/willott29)
-* [Trevor Ju](https://github.com/teajuw)
-* [Anna Stark](https://github.com/annastarky)
+* [Aadhavan Srinivasan](https://github.com/aadhavans2027)
+* [Ryan Baker](https://github.com/rybkr)
+* [Luisa Cruz Miotto](https://github.com/lcruzmio)
+* [Nikhil Chaudhary](https://github.com/chaudhary-nikhil)
 
 ## License
 
