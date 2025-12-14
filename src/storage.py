@@ -18,7 +18,7 @@ import base64
 from collections import Counter, deque
 from datetime import datetime, timedelta, timezone
 import os
-from threading import Lock
+from threading import Lock, Thread
 from typing import Dict, List, Optional, Tuple
 import regex as re
 import logging
@@ -721,43 +721,58 @@ class RegistryStorage:
             return {}
     
     def _save_users_to_s3(self) -> None:
-        """Save all users to S3 bucket.
+        """Save all users to S3 bucket (non-blocking, fire-and-forget).
         
-        Thread-safe operation that serializes all users and writes to S3.
+        Thread-safe operation that serializes all users and writes to S3 in a
+        background thread to never block the calling request.
         """
         if not self._s3_client or not self._s3_bucket:
             logger.warning("S3 not configured. Users will not be persisted.")
             return
         
-        try:
-            # Serialize all users to JSON
-            users_list = []
-            for user in self.users.values():
-                user_dict = {
-                    'user_id': user.user_id,
-                    'username': user.username,
-                    'password_hash': user.password_hash,
-                    'permissions': user.permissions,
-                    'is_admin': user.is_admin,
-                    'created_at': user.created_at.isoformat(),
-                }
-                users_list.append(user_dict)
-            
-            # Write to S3 (thread-safe, called from within _lock context)
-            content = json.dumps(users_list, indent=2)
-            self._s3_client.put_object(
-                Bucket=self._s3_bucket,
-                Key=self._s3_key,
-                Body=content.encode('utf-8'),
-                ContentType='application/json'
-            )
-            logger.info(f"Successfully saved {len(users_list)} users to S3")
-        except (ReadTimeoutError, ConnectTimeoutError) as e:
-            logger.warning(f"S3 save timeout: {e}. Users remain in memory but not persisted to S3.")
-            # Don't raise exception - users are still in memory
-        except Exception as e:
-            logger.error(f"Failed to save users to S3: {e}")
-            # Don't raise exception - users are still in memory
+        # Serialize users while holding the lock (copy data for background thread)
+        users_list = []
+        for user in self.users.values():
+            user_dict = {
+                'user_id': user.user_id,
+                'username': user.username,
+                'password_hash': user.password_hash,
+                'permissions': user.permissions,
+                'is_admin': user.is_admin,
+                'created_at': user.created_at.isoformat(),
+            }
+            users_list.append(user_dict)
+        
+        # Copy data for background thread
+        bucket_name = self._s3_bucket
+        key_name = self._s3_key
+        content_bytes = json.dumps(users_list, indent=2).encode('utf-8')
+        user_count = len(users_list)
+        
+        def _do_save():
+            """Background thread function to perform S3 save."""
+            try:
+                # Get a fresh S3 client in the thread (thread-safe)
+                thread_s3_client = boto3.client('s3', config=Config(
+                    connect_timeout=2,
+                    read_timeout=5,
+                    retries={'max_attempts': 1, 'mode': 'standard'}
+                ))
+                thread_s3_client.put_object(
+                    Bucket=bucket_name,
+                    Key=key_name,
+                    Body=content_bytes,
+                    ContentType='application/json'
+                )
+                logger.info(f"Successfully saved {user_count} users to S3")
+            except (ReadTimeoutError, ConnectTimeoutError) as e:
+                logger.warning(f"S3 save timeout: {e}. Users remain in memory but not persisted to S3.")
+            except Exception as e:
+                logger.error(f"Failed to save users to S3: {e}")
+        
+        # Start save in background thread (daemon so it doesn't block shutdown)
+        thread = Thread(target=_do_save, daemon=True)
+        thread.start()
     
     def _create_default_admin_from_env(self) -> None:
         """Create the default admin user from environment variable.

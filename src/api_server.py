@@ -17,6 +17,7 @@ import re
 import time
 import base64
 import boto3
+import threading
 from botocore.exceptions import ClientError, NoCredentialsError, ReadTimeoutError, ConnectTimeoutError
 from botocore.config import Config
 
@@ -197,10 +198,11 @@ def _decode_package_content(content: str) -> bytes:
 
 
 def _upload_package_to_s3(package_id: str, content: bytes = None, metadata: dict = None) -> Optional[str]:
-    """Upload package to S3.
+    """Upload package to S3 (non-blocking, fire-and-forget).
     
     Always creates an S3 entry for the package. If content is provided, uploads it.
-    Otherwise, creates a metadata file.
+    Otherwise, creates a metadata file. This function returns immediately and
+    performs the S3 upload in a background thread to never block the request.
     
     Args:
         package_id: Unique package identifier (UUID)
@@ -208,7 +210,7 @@ def _upload_package_to_s3(package_id: str, content: bytes = None, metadata: dict
         metadata: Package metadata to store (optional)
         
     Returns:
-        Optional[str]: S3 key if upload successful, None otherwise
+        Optional[str]: S3 key (returned immediately, upload happens in background)
     """
     s3_client = _get_package_s3_client()
     if not s3_client or not _package_s3_bucket:
@@ -218,37 +220,49 @@ def _upload_package_to_s3(package_id: str, content: bytes = None, metadata: dict
     # Generate S3 key
     s3_key = f"packages/{package_id}/content"
     
-    try:
-        if content and len(content) > 0:
-            # Upload actual content
-            s3_client.put_object(
-                Bucket=_package_s3_bucket,
-                Key=s3_key,
-                Body=content,
-                ContentType="application/octet-stream"
+    # Prepare data for background thread (copy to avoid reference issues)
+    bucket_name = _package_s3_bucket
+    key_name = s3_key
+    if content and len(content) > 0:
+        content_bytes = content
+        content_type = "application/octet-stream"
+        is_metadata = False
+    else:
+        content_bytes = json.dumps(metadata or {}, indent=2).encode('utf-8')
+        content_type = "application/json"
+        is_metadata = True
+    
+    def _do_upload():
+        """Background thread function to perform S3 upload."""
+        try:
+            # Get a fresh S3 client in the thread (thread-safe)
+            thread_s3_client = _get_package_s3_client()
+            if not thread_s3_client:
+                return
+            
+            thread_s3_client.put_object(
+                Bucket=bucket_name,
+                Key=key_name,
+                Body=content_bytes,
+                ContentType=content_type
             )
-            logger.info(f"Package content uploaded to S3: {s3_key} ({len(content)} bytes)")
-        else:
-            # Create placeholder/metadata file
-            metadata_content = json.dumps(metadata or {}, indent=2).encode('utf-8')
-            s3_client.put_object(
-                Bucket=_package_s3_bucket,
-                Key=s3_key,
-                Body=metadata_content,
-                ContentType="application/json"
-            )
-            logger.info(f"Package metadata uploaded to S3: {s3_key} (metadata only, {len(metadata_content)} bytes)")
-        
-        return s3_key
-    except (ReadTimeoutError, ConnectTimeoutError) as e:
-        logger.warning(f"S3 upload timeout for package {package_id}: {e}. Continuing without S3 storage.")
-        return None
-    except ClientError as e:
-        logger.error(f"Failed to upload package to S3: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"Unexpected error uploading package to S3: {e}")
-        return None
+            if is_metadata:
+                logger.info(f"Package metadata uploaded to S3: {key_name} (metadata only, {len(content_bytes)} bytes)")
+            else:
+                logger.info(f"Package content uploaded to S3: {key_name} ({len(content_bytes)} bytes)")
+        except (ReadTimeoutError, ConnectTimeoutError) as e:
+            logger.warning(f"S3 upload timeout for package {package_id}: {e}. Continuing without S3 storage.")
+        except ClientError as e:
+            logger.error(f"Failed to upload package to S3: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error uploading package to S3: {e}")
+    
+    # Start upload in background thread (daemon so it doesn't block shutdown)
+    thread = threading.Thread(target=_do_upload, daemon=True)
+    thread.start()
+    
+    # Return immediately with the expected s3_key
+    return s3_key
 
 
 def check_auth_header():
