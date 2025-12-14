@@ -24,7 +24,6 @@ class Package:
         upload_timestamp: When package was uploaded
         size_bytes: Package size in bytes
         metadata: Additional package metadata (e.g., URL, scores, readme)
-        s3_key: Optional S3 storage key for package content
     """
 
     id: str
@@ -35,7 +34,6 @@ class Package:
     upload_timestamp: datetime
     size_bytes: int
     metadata: Dict[str, Any]
-    s3_key: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert package to dictionary with ISO timestamp.
@@ -52,7 +50,6 @@ class Package:
             "upload_timestamp": self.upload_timestamp.isoformat(),
             "size_bytes": self.size_bytes,
             "metadata": self.metadata,
-            "s3_key": self.s3_key,
         }
 
     def get_version_int(self) -> int:

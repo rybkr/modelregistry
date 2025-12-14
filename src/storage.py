@@ -122,14 +122,10 @@ class RegistryStorage:
     """In-memory storage for package registry.
 
     Provides CRUD operations and search functionality for packages.
-    User data is persisted to S3 if configured via USER_STORAGE_BUCKET environment variable.
-    
     Required environment variables:
-    - USER_STORAGE_BUCKET: S3 bucket name for storing user data (optional, for persistence)
-    - DEFAULT_ADMIN_PASSWORD_HASH: Password hash for default admin user (required if S3 file doesn't exist)
+    - DEFAULT_ADMIN_PASSWORD_HASH: Password hash for default admin user (required)
     
-    If USER_STORAGE_BUCKET is set, users are loaded from and saved to S3.
-    If not set, users are stored in memory only and default admin is created from DEFAULT_ADMIN_PASSWORD_HASH.
+    Users are stored in memory only. Default admin is created from DEFAULT_ADMIN_PASSWORD_HASH.
     """
 
     def __init__(self):
@@ -640,7 +636,7 @@ class RegistryStorage:
     def _create_default_admin_from_env(self) -> None:
         """Create the default admin user from environment variable.
 
-        This is called when S3 file doesn't exist or S3 is not configured.
+        Creates default admin user from environment variable.
         Requires DEFAULT_ADMIN_PASSWORD_HASH environment variable to be set.
         
         The password hash should be generated using auth.hash_password() with the
@@ -702,7 +698,6 @@ class RegistryStorage:
         """
         with self._lock:
             self.users[user.username] = user
-            self._save_users_to_s3()
         return user
 
     def get_user(self, username: str) -> Optional[User]:
@@ -749,7 +744,6 @@ class RegistryStorage:
                 ]
                 for token in tokens_to_delete:
                     del self.tokens[token]
-                self._save_users_to_s3()
             return user
 
     def list_users(self) -> List[User]:

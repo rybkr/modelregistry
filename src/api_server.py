@@ -700,21 +700,8 @@ def create_package():
     # Generate package ID
     package_id = str(uuid.uuid4())
 
-    # Always upload package to S3 (with content if provided, or metadata if not)
-    s3_key = None
     content_length = len(content) if content else 0
     logger.info(f"Package creation: name={name}, version={version}, content_length={content_length}, has_content={bool(content)}")
-    
-    try:
-        content_bytes = None
-        if content:
-            content_bytes = _decode_package_content(content)
-        
-        # Always upload to S3 (content if available, metadata otherwise)
-        # S3 storage removed - packages stored in memory only
-        s3_key = None
-    except Exception as e:
-        logger.error(f"Error uploading package to S3: {e}, continuing without S3 storage")
 
     # Calculate size_bytes from content
     size_bytes = len(content.encode("utf-8")) if content else 0
@@ -734,7 +721,6 @@ def create_package():
         upload_timestamp=datetime.now(timezone.utc),
         size_bytes=size_bytes,
         metadata=metadata,
-        s3_key=s3_key,
     )
 
     # Store package
@@ -1099,10 +1085,7 @@ def create_artifact(artifact_type):
 
     package_id = str(uuid.uuid4())
     
-    # Always upload package to S3 (metadata only for URL-based packages)
     metadata = {"url": url, "scores": scores}
-    # S3 storage removed - packages stored in memory only
-    s3_key = None
     
     package = Package(
         id=package_id,
@@ -1113,7 +1096,6 @@ def create_artifact(artifact_type):
         upload_timestamp=datetime.now(timezone.utc),
         size_bytes=0,
         metadata=metadata,
-        s3_key=s3_key,
     )
 
     storage.create_package(package)
@@ -2300,9 +2282,7 @@ def ingest_model():
         # Infer artifact type from URL
         artifact_type = infer_artifact_type_from_url(url)
 
-        # S3 storage removed - packages stored in memory only
         metadata = {"url": url, "scores": scores}
-        s3_key = None
 
         package = Package(
             id=package_id,
@@ -2313,7 +2293,6 @@ def ingest_model():
             upload_timestamp=datetime.now(timezone.utc),
             size_bytes=0,
             metadata=metadata,
-            s3_key=s3_key,
         )
 
         storage.create_package(package)
@@ -2404,16 +2383,10 @@ def ingest_upload():
                 if "url" in metadata:
                     artifact_type = infer_artifact_type_from_url(metadata["url"])
 
-                # Always upload package to S3 (with content if provided, or metadata if not)
                 content = pkg_data.get("content", "")
-                s3_key = None
                 try:
-                    content_bytes = None
                     if content:
-                        content_bytes = _decode_package_content(content)
-                    
-                    # S3 storage removed - packages stored in memory only
-                    s3_key = None
+                        _decode_package_content(content)
                 except Exception as e:
                     logger.error(f"Error processing package: {e}")
 
@@ -2429,7 +2402,6 @@ def ingest_upload():
                     upload_timestamp=datetime.now(timezone.utc),
                     size_bytes=size_bytes,
                     metadata=metadata,
-                    s3_key=s3_key,
                 )
 
                 storage.create_package(package)
