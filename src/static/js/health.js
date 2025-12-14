@@ -3,11 +3,36 @@
  */
 
 /**
+ * Update reset button visibility based on auth state
+ */
+function updateResetButtonVisibility() {
+    const resetBtn = document.getElementById('reset-registry');
+    if (!resetBtn) return;
+
+    // Only show reset button if user is authenticated and has admin permission
+    if (typeof authManager !== 'undefined' && authManager.isAuthenticated() && authManager.hasPermission('admin')) {
+        resetBtn.style.display = '';
+        resetBtn.disabled = false;
+    } else {
+        resetBtn.style.display = 'none';
+    }
+}
+
+/**
  * Initialize the page
  */
 document.addEventListener('DOMContentLoaded', () => {
+    // Update reset button visibility based on auth state
+    updateResetButtonVisibility();
+
+    // Listen for auth state changes
+    window.addEventListener('authStateChange', updateResetButtonVisibility);
+
     document.getElementById('refresh-health').addEventListener('click', () => loadHealthData(true));
-    document.getElementById('reset-registry').addEventListener('click', handleReset);
+    const resetBtn = document.getElementById('reset-registry');
+    if (resetBtn) {
+        resetBtn.addEventListener('click', handleReset);
+    }
 
     const refreshActivityBtn = document.getElementById('refresh-activity');
     if (refreshActivityBtn) {
@@ -51,7 +76,7 @@ async function loadHealthData(showSpinner = false) {
         // Update status card
         const statusCard = document.getElementById('status-card');
         const healthStatus = document.getElementById('health-status');
-        
+
         if (health.status === 'healthy') {
             statusCard.className = 'card text-white bg-success';
             healthStatus.textContent = 'Healthy';
@@ -227,7 +252,7 @@ async function handleReset() {
         'Are you sure you want to reset the registry? This will delete ALL packages and cannot be undone.',
         'Reset Registry - Warning'
     );
-    
+
     if (!firstConfirm) {
         return;
     }
@@ -236,14 +261,14 @@ async function handleReset() {
         'This is your last chance. Are you absolutely sure you want to delete ALL packages?',
         'Reset Registry - Final Confirmation'
     );
-    
+
     if (!secondConfirm) {
         return;
     }
 
     const resetBtn = document.getElementById('reset-registry');
     const originalText = resetBtn.innerHTML;
-    
+
     resetBtn.disabled = true;
     resetBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Resetting...';
     resetBtn.setAttribute('aria-busy', 'true');
@@ -251,7 +276,7 @@ async function handleReset() {
     try {
         await apiClient.resetRegistry();
         showAlert('Registry reset successfully!', 'success');
-        
+
         // Reload health data and redirect to home
         setTimeout(() => {
             loadHealthData(true);

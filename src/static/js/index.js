@@ -11,9 +11,34 @@ let currentSortField = '';
 let currentSortOrder = '';
 
 /**
+ * Update UI based on authentication state
+ */
+function updateUIForAuth() {
+    const uploadBtn = document.querySelector('a[href*="upload"]');
+    const ingestBtn = document.querySelector('a[href*="ingest"]');
+    
+    if (uploadBtn) {
+        if (typeof authManager !== 'undefined' && authManager.isAuthenticated() && authManager.hasPermission('upload')) {
+            uploadBtn.style.display = '';
+            uploadBtn.classList.remove('disabled');
+        } else {
+            uploadBtn.style.display = 'none';
+        }
+    }
+    
+    // Ingest might also need auth, but keeping it visible for now
+}
+
+/**
  * Initialize the page
  */
 document.addEventListener('DOMContentLoaded', async () => {
+    // Update UI based on auth state
+    updateUIForAuth();
+    
+    // Listen for auth state changes
+    window.addEventListener('authStateChange', updateUIForAuth);
+    
     // Load initial parameters from URL
     const urlOffset = getUrlParameter('offset');
     const urlLimit = getUrlParameter('limit');

@@ -14,10 +14,15 @@ class ApiClient {
      */
     async request(endpoint, options = {}) {
         const url = `${API_BASE_URL}${endpoint}`;
+
+        // Get auth token if available
+        const token = typeof authManager !== 'undefined' ? authManager.getToken() : null;
+
         const config = {
             headers: {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',
+                ...(token && { 'X-Authorization': token }),
                 ...options.headers,
             },
             ...options,
@@ -29,10 +34,21 @@ class ApiClient {
 
         try {
             const response = await fetch(url, config);
-            const data = await response.json();
+
+            // Check content type before parsing
+            const contentType = response.headers.get('content-type');
+            let data;
+
+            if (contentType && contentType.includes('application/json')) {
+                data = await response.json();
+            } else {
+                // If not JSON, try to get text for error message
+                const text = await response.text();
+                throw new Error(`Unexpected response format: ${text.substring(0, 100)}`);
+            }
 
             if (!response.ok) {
-                throw new Error(data.error || `HTTP error! status: ${response.status}`);
+                throw new Error(data.error || data.message || `HTTP error! status: ${response.status}`);
             }
 
             return data;
@@ -122,10 +138,11 @@ class ApiClient {
     /**
      * Delete a package
      * @param {string} packageId - Package ID
+     * @param {string} artifactType - Artifact type (model, dataset, or code)
      * @returns {Promise<object>}
      */
-    async deletePackage(packageId) {
-        return this.request(`/api/packages/${packageId}`, {
+    async deletePackage(packageId, artifactType = 'model') {
+        return this.request(`/api/artifacts/${artifactType}/${packageId}`, {
             method: 'DELETE',
         });
     }
@@ -133,10 +150,11 @@ class ApiClient {
     /**
      * Rate a package (get metrics)
      * @param {string} packageId - Package ID
-     * @returns {Promise<object>}
+     * @param {string} artifactType - Artifact type (model, dataset, or code), defaults to 'model'
+     * @returns {Promise<object>} ModelRating object with all metrics
      */
-    async ratePackage(packageId) {
-        return this.request(`/api/packages/${packageId}/rate`);
+    async ratePackage(packageId, artifactType = 'model') {
+        return this.request(`/api/artifact/${artifactType}/${packageId}/rate`);
     }
 
     /**
@@ -159,6 +177,80 @@ class ApiClient {
         return this.request('/api/reset', {
             method: 'DELETE',
         });
+    }
+
+    /**
+     * Authenticate user and store token
+     * @param {string} username - Username
+     * @param {string} password - Password
+     * @returns {Promise<object>} User info
+     */
+    async authenticate(username, password) {
+        const url = `${API_BASE_URL}/api/authenticate`;
+
+        try {
+            const response = await fetch(url, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify({
+                    user: { name: username },
+                    secret: { password: password }
+                })
+            });
+
+            // Handle non-JSON responses
+            let data;
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+                data = await response.json();
+            } else {
+                const text = await response.text();
+                // Try to parse as JSON if it looks like JSON
+                try {
+                    data = JSON.parse(text);
+                } catch {
+                    // If not JSON, treat the text as the token
+                    data = text;
+                }
+            }
+
+            if (!response.ok) {
+                const errorMsg = data.error || data.message || `HTTP error! status: ${response.status}`;
+                throw new Error(errorMsg);
+            }
+
+            // Token extraction - handle various formats
+            let authToken;
+            if (typeof data === 'string') {
+                // Token is returned as JSON string (e.g., "bearer abc123...")
+                authToken = data;
+            } else if (data.token) {
+                authToken = data.token;
+            } else if (data && typeof data === 'object') {
+                // If it's an object, try to extract token
+                authToken = JSON.stringify(data);
+            } else {
+                authToken = data;
+            }
+
+            // Remove quotes if token is wrapped in quotes
+            if (typeof authToken === 'string') {
+                authToken = authToken.trim().replace(/^["']|["']$/g, '');
+            }
+
+            // Store token
+            if (typeof authManager !== 'undefined') {
+                authManager.setAuth(authToken, { username: username });
+            }
+
+            return { token: authToken, username };
+        } catch (error) {
+            console.error('Authentication error:', error);
+            throw error;
+        }
     }
 }
 
