@@ -16,10 +16,7 @@ import tempfile
 import re
 import time
 import base64
-import boto3
 import threading
-from botocore.exceptions import ClientError, NoCredentialsError, ReadTimeoutError, ConnectTimeoutError
-from botocore.config import Config
 
 from registry_models import Package
 from storage import storage
@@ -95,18 +92,6 @@ _valid_tokens = set()
 
 DEFAULT_TOKEN = "bearer default-admin-token"
 
-# S3 configuration for package content storage
-# PACKAGE_STORAGE_BUCKET: S3 bucket name for storing package content (optional)
-# If not set, packages are created without S3 keys (backward compatible)
-# Package content is uploaded to S3 when the 'content' field is provided in package creation requests
-_package_s3_bucket = os.environ.get("PACKAGE_STORAGE_BUCKET")
-_package_s3_client = None
-
-# Rate limiting for S3 uploads - ONE AT A TIME to prevent any stalling
-_max_concurrent_s3_uploads = 1  # Only ONE upload at a time
-_active_s3_uploads = 0
-_s3_upload_lock = threading.Lock()
-
 
 def initialize_default_token():
     """Initialize the default admin token for the reset/initial state.
@@ -121,7 +106,7 @@ def initialize_default_admin_user():
     """Initialize the default admin user in storage.
 
     Validates that the default admin user exists. The user should be created
-    via S3 initialization or environment variable during storage initialization.
+    via environment variable during storage initialization.
     This function serves as a validation check.
     """
     # Check if default user already exists
@@ -132,39 +117,8 @@ def initialize_default_admin_user():
     
     logger.warning(
         f"Default admin user '{DEFAULT_USERNAME}' not found. "
-        "It should be created during storage initialization from S3 or environment variable."
+        "It should be created during storage initialization from environment variable."
     )
-
-
-def _get_package_s3_client():
-    """Get or initialize S3 client for package content storage.
-    
-    Returns:
-        boto3.client or None: S3 client if bucket is configured, None otherwise
-    """
-    global _package_s3_client
-    
-    if not _package_s3_bucket:
-        return None
-    
-    if _package_s3_client is None:
-        try:
-            # Configure S3 client with ULTRA-AGGRESSIVE timeouts - NEVER STALL
-            s3_config = Config(
-                connect_timeout=1,  # 1 second max to connect
-                read_timeout=3,     # 3 seconds max to read
-                retries={
-                    'max_attempts': 1,  # No retries - fail fast
-                    'mode': 'standard'
-                }
-            )
-            _package_s3_client = boto3.client('s3', config=s3_config)
-            logger.info(f"S3 client initialized for package storage bucket: {_package_s3_bucket}")
-        except (NoCredentialsError, Exception) as e:
-            logger.warning(f"Failed to initialize S3 client for package storage: {e}")
-            return None
-    
-    return _package_s3_client
 
 
 def _decode_package_content(content: str) -> bytes:
@@ -200,97 +154,6 @@ def _decode_package_content(content: str) -> bytes:
     except Exception as e:
         logger.warning(f"Failed to encode content to bytes: {e}")
         return content.encode('utf-8', errors='ignore')
-
-
-def _upload_package_to_s3(package_id: str, content: bytes = None, metadata: dict = None) -> Optional[str]:
-    """Upload package to S3 (non-blocking, rate-limited).
-    
-    Only uploads to S3 if there's available bandwidth (not too many concurrent uploads).
-    If system is busy, skips S3 upload to prevent overwhelming the system.
-    
-    Args:
-        package_id: Unique package identifier (UUID)
-        content: Content bytes to upload (optional)
-        metadata: Package metadata to store (optional)
-        
-    Returns:
-        Optional[str]: S3 key if upload started, None if skipped due to rate limiting
-    """
-    s3_client = _get_package_s3_client()
-    if not s3_client or not _package_s3_bucket:
-        logger.warning(f"Package storage S3 bucket not configured or client unavailable. Bucket: {_package_s3_bucket}, Client: {s3_client is not None}")
-        return None
-    
-    # Check if we have bandwidth for S3 upload (rate limiting - ONE AT A TIME)
-    global _active_s3_uploads
-    try:
-        with _s3_upload_lock:
-            if _active_s3_uploads >= _max_concurrent_s3_uploads:
-                # Already one upload in progress, skip this one - NEVER STALL
-                logger.debug(f"Skipping S3 upload for package {package_id}: upload already in progress (one at a time)")
-                return None
-            _active_s3_uploads += 1
-    except Exception:
-        # If lock fails for any reason, skip upload - NEVER STALL
-        logger.warning(f"Lock error checking S3 upload status, skipping upload for package {package_id}")
-        return None
-    
-    # Generate S3 key
-    s3_key = f"packages/{package_id}/content"
-    
-    # Prepare data for background thread (copy to avoid reference issues)
-    bucket_name = _package_s3_bucket
-    key_name = s3_key
-    if content and len(content) > 0:
-        content_bytes = content
-        content_type = "application/octet-stream"
-        is_metadata = False
-    else:
-        content_bytes = json.dumps(metadata or {}, indent=2).encode('utf-8')
-        content_type = "application/json"
-        is_metadata = True
-    
-    def _do_upload():
-        """Background thread function to perform S3 upload. NEVER STALLS."""
-        global _active_s3_uploads
-        try:
-            # Get a fresh S3 client in the thread (thread-safe)
-            thread_s3_client = _get_package_s3_client()
-            if not thread_s3_client:
-                return
-            
-            # Use aggressive timeout - fail fast if S3 is slow
-            thread_s3_client.put_object(
-                Bucket=bucket_name,
-                Key=key_name,
-                Body=content_bytes,
-                ContentType=content_type
-            )
-            if is_metadata:
-                logger.info(f"Package metadata uploaded to S3: {key_name} (metadata only, {len(content_bytes)} bytes)")
-            else:
-                logger.info(f"Package content uploaded to S3: {key_name} ({len(content_bytes)} bytes)")
-        except (ReadTimeoutError, ConnectTimeoutError) as e:
-            logger.warning(f"S3 upload timeout for package {package_id}: {e}. Continuing without S3 storage.")
-        except ClientError as e:
-            logger.error(f"Failed to upload package to S3: {e}")
-        except Exception as e:
-            logger.error(f"Unexpected error uploading package to S3: {e}")
-        finally:
-            # ALWAYS decrement counter - even on exception - to prevent deadlock
-            try:
-                with _s3_upload_lock:
-                    _active_s3_uploads = max(0, _active_s3_uploads - 1)
-            except Exception:
-                # If lock fails, force reset (should never happen but safety)
-                _active_s3_uploads = 0
-    
-    # Start upload in background thread (daemon so it doesn't block shutdown)
-    thread = threading.Thread(target=_do_upload, daemon=True)
-    thread.start()
-    
-    # Return immediately with the expected s3_key
-    return s3_key
 
 
 def check_auth_header():
@@ -848,9 +711,8 @@ def create_package():
             content_bytes = _decode_package_content(content)
         
         # Always upload to S3 (content if available, metadata otherwise)
-        s3_key = _upload_package_to_s3(package_id, content_bytes, metadata)
-        if not s3_key:
-            logger.warning(f"Failed to upload package to S3 for package {package_id}, continuing without S3 storage")
+        # S3 storage removed - packages stored in memory only
+        s3_key = None
     except Exception as e:
         logger.error(f"Error uploading package to S3: {e}, continuing without S3 storage")
 
@@ -1239,9 +1101,8 @@ def create_artifact(artifact_type):
     
     # Always upload package to S3 (metadata only for URL-based packages)
     metadata = {"url": url, "scores": scores}
-    s3_key = _upload_package_to_s3(package_id, None, metadata)
-    if not s3_key:
-        logger.warning(f"Failed to upload package to S3 for package {package_id}, continuing without S3 storage")
+    # S3 storage removed - packages stored in memory only
+    s3_key = None
     
     package = Package(
         id=package_id,
@@ -2439,11 +2300,9 @@ def ingest_model():
         # Infer artifact type from URL
         artifact_type = infer_artifact_type_from_url(url)
 
-        # Always upload package to S3 (metadata only for URL-based packages)
+        # S3 storage removed - packages stored in memory only
         metadata = {"url": url, "scores": scores}
-        s3_key = _upload_package_to_s3(package_id, None, metadata)
-        if not s3_key:
-            logger.warning(f"Failed to upload package to S3 for package {package_id}, continuing without S3 storage")
+        s3_key = None
 
         package = Package(
             id=package_id,
@@ -2553,12 +2412,10 @@ def ingest_upload():
                     if content:
                         content_bytes = _decode_package_content(content)
                     
-                    # Always upload to S3 (content if available, metadata otherwise)
-                    s3_key = _upload_package_to_s3(package_id, content_bytes, metadata)
-                    if not s3_key:
-                        logger.warning(f"Failed to upload package to S3 for package {package_id}, continuing without S3 storage")
+                    # S3 storage removed - packages stored in memory only
+                    s3_key = None
                 except Exception as e:
-                    logger.error(f"Error uploading package to S3: {e}, continuing without S3 storage")
+                    logger.error(f"Error processing package: {e}")
 
                 # Calculate size_bytes from content
                 size_bytes = len(content.encode("utf-8")) if content else 0

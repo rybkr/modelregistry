@@ -2,7 +2,7 @@
 
 This module provides in-memory storage for packages, users, and authentication tokens.
 It includes CRUD operations, search functionality with regex support (with ReDoS protection),
-activity logging, and optional AWS S3 integration for file storage.
+activity logging.
 
 The storage system supports:
 - Package management (create, read, update, delete, search)
@@ -28,9 +28,6 @@ from registry_models import Package, User, TokenInfo
 from urllib.parse import urlparse
 
 import requests
-import boto3
-from botocore.exceptions import ClientError, NoCredentialsError, ReadTimeoutError, ConnectTimeoutError
-from botocore.config import Config
 
 logger = logging.getLogger('storage')
 
@@ -150,51 +147,8 @@ class RegistryStorage:
             "metrics_evaluated",
             "registry_reset",
         ]
-        # Initialize S3 client and configuration
-        self._s3_bucket = os.environ.get("USER_STORAGE_BUCKET")
-        self._s3_key = "users/users.json"
-        try:
-            # Configure S3 client with aggressive timeouts to prevent hanging
-            # Reduced timeouts for faster failure during startup
-            s3_config = Config(
-                connect_timeout=2,
-                read_timeout=5,
-                retries={
-                    'max_attempts': 1,
-                    'mode': 'standard'
-                }
-            )
-            self._s3_client = boto3.client('s3', config=s3_config)
-        except (NoCredentialsError, Exception) as e:
-            logger.warning(f"Failed to initialize S3 client: {e}. S3 operations will be disabled.")
-            self._s3_client = None
-        
-        # Always create default admin first so app can start immediately
+        # Always create default admin from environment variable
         self._create_default_admin_from_env()
-        
-        # Load users from S3 in background (non-blocking startup)
-        # This ensures Flask app starts immediately even if S3 is slow
-        if self._s3_bucket and self._s3_client:
-            def _load_users_async():
-                """Background thread to load users from S3 after startup."""
-                try:
-                    loaded_users = self._load_users_from_s3()
-                    if loaded_users:
-                        # Merge loaded users (don't overwrite default admin if username matches)
-                        with self._lock:
-                            for username, user in loaded_users.items():
-                                if username not in self.users:
-                                    self.users[username] = user
-                        logger.info(f"Loaded {len(loaded_users)} users from S3 in background")
-                except Exception as e:
-                    logger.warning(f"Failed to load users from S3 in background: {e}. Using default admin only.")
-            
-            # Start async load in background thread (daemon so it doesn't block shutdown)
-            thread = Thread(target=_load_users_async, daemon=True)
-            thread.start()
-        else:
-            if not self._s3_bucket:
-                logger.warning("USER_STORAGE_BUCKET not set. Users will not persist to S3.")
         
         self.reset()
 
@@ -683,112 +637,6 @@ class RegistryStorage:
         return f"{prefix} '{name}' v{version}{suffix}"
 
     # User management ---------------------------------------------------------
-    def _load_users_from_s3(self) -> Dict[str, User]:
-        """Load users from S3 bucket.
-        
-        Returns:
-            Dict[str, User]: Dictionary mapping username -> User, or empty dict if file doesn't exist
-        """
-        if not self._s3_client or not self._s3_bucket:
-            return {}
-        
-        try:
-            response = self._s3_client.get_object(Bucket=self._s3_bucket, Key=self._s3_key)
-            content = response['Body'].read().decode('utf-8')
-            users_data = json.loads(content)
-            
-            # Reconstruct User objects from JSON
-            users_dict = {}
-            for user_data in users_data:
-                user = User(
-                    user_id=user_data['user_id'],
-                    username=user_data['username'],
-                    password_hash=user_data['password_hash'],
-                    permissions=user_data.get('permissions', []),
-                    is_admin=user_data.get('is_admin', False),
-                    created_at=datetime.fromisoformat(user_data['created_at'].replace('Z', '+00:00')),
-                )
-                users_dict[user.username] = user
-            
-            logger.info(f"Successfully loaded {len(users_dict)} users from S3")
-            return users_dict
-        except (ReadTimeoutError, ConnectTimeoutError) as e:
-            logger.warning(f"S3 load timeout: {e}. Starting with empty users, will create default admin from environment variable.")
-            return {}
-        except ClientError as e:
-            if e.response['Error']['Code'] == 'NoSuchKey':
-                logger.info("S3 users file does not exist. Will create default admin from environment variable.")
-                return {}
-            else:
-                logger.error(f"Failed to load users from S3: {e}")
-                return {}
-        except Exception as e:
-            logger.error(f"Error loading users from S3: {e}")
-            return {}
-    
-    def _save_users_to_s3(self) -> None:
-        """Save all users to S3 bucket (non-blocking, rate-limited).
-        
-        Only saves to S3 if system has bandwidth. Skips save if too busy.
-        Thread-safe operation that serializes all users and writes to S3 in a
-        background thread to never block the calling request.
-        """
-        if not self._s3_client or not self._s3_bucket:
-            logger.warning("S3 not configured. Users will not be persisted.")
-            return
-        
-        # Skip S3 save if package uploads are happening (rate limiting)
-        # Don't save users to S3 during bulk package uploads to prevent stalling
-        import random
-        if random.random() > 0.05:  # Only save 5% of the time to reduce load
-            logger.debug("Skipping S3 user save to reduce load")
-            return
-        
-        # Serialize users while holding the lock (copy data for background thread)
-        users_list = []
-        for user in self.users.values():
-            user_dict = {
-                'user_id': user.user_id,
-                'username': user.username,
-                'password_hash': user.password_hash,
-                'permissions': user.permissions,
-                'is_admin': user.is_admin,
-                'created_at': user.created_at.isoformat(),
-            }
-            users_list.append(user_dict)
-        
-        # Copy data for background thread
-        bucket_name = self._s3_bucket
-        key_name = self._s3_key
-        content_bytes = json.dumps(users_list, indent=2).encode('utf-8')
-        user_count = len(users_list)
-        
-        def _do_save():
-            """Background thread function to perform S3 save. NEVER STALLS."""
-            try:
-                # Get a fresh S3 client in the thread (thread-safe) with aggressive timeouts
-                thread_s3_client = boto3.client('s3', config=Config(
-                    connect_timeout=1,  # Even faster timeout
-                    read_timeout=3,     # Even faster timeout
-                    retries={'max_attempts': 1, 'mode': 'standard'}
-                ))
-                thread_s3_client.put_object(
-                    Bucket=bucket_name,
-                    Key=key_name,
-                    Body=content_bytes,
-                    ContentType='application/json'
-                )
-                logger.info(f"Successfully saved {user_count} users to S3")
-            except (ReadTimeoutError, ConnectTimeoutError) as e:
-                logger.warning(f"S3 save timeout: {e}. Users remain in memory but not persisted to S3.")
-            except Exception as e:
-                logger.error(f"Failed to save users to S3: {e}")
-                # Never raise - always continue
-        
-        # Start save in background thread (daemon so it doesn't block shutdown)
-        thread = Thread(target=_do_save, daemon=True)
-        thread.start()
-    
     def _create_default_admin_from_env(self) -> None:
         """Create the default admin user from environment variable.
 
@@ -828,9 +676,6 @@ class RegistryStorage:
         with self._lock:
             self.users[default_username] = default_user
             
-            # Save to S3 if configured
-            if self._s3_bucket and self._s3_client:
-                self._save_users_to_s3()
 
         # Create default token (bearer default-admin-token)
         default_token = "default-admin-token"
