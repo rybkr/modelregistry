@@ -12,6 +12,11 @@ def test_health_endpoint(client):
     assert response.status_code == 200
     data = response.get_json()
     assert "timestamp" in data
+    assert "status" in data
+    assert data["status"] == "healthy"
+    assert "packages_count" in data
+    assert isinstance(data["packages_count"], int)
+    assert data["packages_count"] >= 0
 
 
 def test_root_endpoint(client):

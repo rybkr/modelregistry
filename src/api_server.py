@@ -458,15 +458,21 @@ def health():
     """Check the health status of the Model Registry API.
 
     Returns health information including server status, current timestamp,
-    the total number of packages in the registry.
+    and the total number of packages in the registry.
 
     Returns:
         tuple: JSON response with health data and 200 status code
+            - status (str): Health status, always "healthy" if endpoint responds
             - timestamp (str): Current UTC timestamp in ISO format
+            - packages_count (int): Total number of packages in the registry
     """
+    packages_count = len(storage.list_packages(offset=0, limit=10000))
+    
     return jsonify(
         {
+            "status": "healthy",
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "packages_count": packages_count,
         }
     ), 200
 
