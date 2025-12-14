@@ -97,7 +97,7 @@ async function handleRate() {
     rateBtn.setAttribute('aria-busy', 'true');
 
     try {
-        const metrics = await apiClient.ratePackage(currentPackageId);
+        const metrics = await apiClient.ratePackage(currentPackageId, currentArtifactType);
         displayMetrics(metrics);
         showAlert('Package rated successfully!', 'success');
     } catch (error) {

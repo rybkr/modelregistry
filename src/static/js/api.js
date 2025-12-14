@@ -34,10 +34,21 @@ class ApiClient {
 
         try {
             const response = await fetch(url, config);
-            const data = await response.json();
+
+            // Check content type before parsing
+            const contentType = response.headers.get('content-type');
+            let data;
+
+            if (contentType && contentType.includes('application/json')) {
+                data = await response.json();
+            } else {
+                // If not JSON, try to get text for error message
+                const text = await response.text();
+                throw new Error(`Unexpected response format: ${text.substring(0, 100)}`);
+            }
 
             if (!response.ok) {
-                throw new Error(data.error || `HTTP error! status: ${response.status}`);
+                throw new Error(data.error || data.message || `HTTP error! status: ${response.status}`);
             }
 
             return data;
@@ -139,10 +150,11 @@ class ApiClient {
     /**
      * Rate a package (get metrics)
      * @param {string} packageId - Package ID
-     * @returns {Promise<object>}
+     * @param {string} artifactType - Artifact type (model, dataset, or code), defaults to 'model'
+     * @returns {Promise<object>} ModelRating object with all metrics
      */
-    async ratePackage(packageId) {
-        return this.request(`/api/packages/${packageId}/rate`);
+    async ratePackage(packageId, artifactType = 'model') {
+        return this.request(`/api/artifact/${artifactType}/${packageId}/rate`);
     }
 
     /**
