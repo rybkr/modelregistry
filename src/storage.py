@@ -8,11 +8,14 @@ from threading import Lock
 from typing import Dict, List, Optional, Tuple
 import regex as re
 import logging
+import json
 
 from registry_models import Package, User, TokenInfo
 from urllib.parse import urlparse
 
 import requests
+import boto3
+from botocore.exceptions import ClientError, NoCredentialsError
 
 logger = logging.getLogger('storage')
 
@@ -107,7 +110,14 @@ class RegistryStorage:
     """In-memory storage for package registry.
 
     Provides CRUD operations and search functionality for packages.
-    All data is stored in memory and will be lost on restart.
+    User data is persisted to S3 if configured via USER_STORAGE_BUCKET environment variable.
+    
+    Required environment variables:
+    - USER_STORAGE_BUCKET: S3 bucket name for storing user data (optional, for persistence)
+    - DEFAULT_ADMIN_PASSWORD_HASH: Password hash for default admin user (required if S3 file doesn't exist)
+    
+    If USER_STORAGE_BUCKET is set, users are loaded from and saved to S3.
+    If not set, users are stored in memory only and default admin is created from DEFAULT_ADMIN_PASSWORD_HASH.
     """
 
     def __init__(self):
@@ -125,6 +135,30 @@ class RegistryStorage:
             "metrics_evaluated",
             "registry_reset",
         ]
+        # Initialize S3 client and configuration
+        self._s3_bucket = os.environ.get("USER_STORAGE_BUCKET")
+        self._s3_key = "users/users.json"
+        try:
+            self._s3_client = boto3.client('s3')
+        except (NoCredentialsError, Exception) as e:
+            logger.warning(f"Failed to initialize S3 client: {e}. S3 operations will be disabled.")
+            self._s3_client = None
+        
+        # Load users from S3 if bucket is configured
+        if self._s3_bucket and self._s3_client:
+            loaded_users = self._load_users_from_s3()
+            if loaded_users:
+                self.users = loaded_users
+                logger.info(f"Loaded {len(self.users)} users from S3")
+            else:
+                # S3 file doesn't exist, create default admin from env var
+                self._create_default_admin_from_env()
+        else:
+            # No S3 configured, create default admin from env var
+            if not self._s3_bucket:
+                logger.warning("USER_STORAGE_BUCKET not set. Users will not persist to S3.")
+            self._create_default_admin_from_env()
+        
         self.reset()
 
     def reset(self):
@@ -149,7 +183,7 @@ class RegistryStorage:
 
             # Ensure default admin exists (in case storage was freshly initialized)
             if "ece30861defaultadminuser" not in self.users:
-                self._create_default_admin()
+                self._create_default_admin_from_env()
 
     def create_package(self, package: Package) -> Package:
         """Store a new package.
@@ -612,30 +646,124 @@ class RegistryStorage:
         return f"{prefix} '{name}' v{version}{suffix}"
 
     # User management ---------------------------------------------------------
-    def _create_default_admin(self) -> None:
-        """Create the default admin user required by autograder.
+    def _load_users_from_s3(self) -> Dict[str, User]:
+        """Load users from S3 bucket.
+        
+        Returns:
+            Dict[str, User]: Dictionary mapping username -> User, or empty dict if file doesn't exist
+        """
+        if not self._s3_client or not self._s3_bucket:
+            return {}
+        
+        try:
+            response = self._s3_client.get_object(Bucket=self._s3_bucket, Key=self._s3_key)
+            content = response['Body'].read().decode('utf-8')
+            users_data = json.loads(content)
+            
+            # Reconstruct User objects from JSON
+            users_dict = {}
+            for user_data in users_data:
+                user = User(
+                    user_id=user_data['user_id'],
+                    username=user_data['username'],
+                    password_hash=user_data['password_hash'],
+                    permissions=user_data.get('permissions', []),
+                    is_admin=user_data.get('is_admin', False),
+                    created_at=datetime.fromisoformat(user_data['created_at'].replace('Z', '+00:00')),
+                )
+                users_dict[user.username] = user
+            
+            logger.info(f"Successfully loaded {len(users_dict)} users from S3")
+            return users_dict
+        except ClientError as e:
+            if e.response['Error']['Code'] == 'NoSuchKey':
+                logger.info("S3 users file does not exist. Will create default admin from environment variable.")
+                return {}
+            else:
+                logger.error(f"Failed to load users from S3: {e}")
+                return {}
+        except Exception as e:
+            logger.error(f"Error loading users from S3: {e}")
+            return {}
+    
+    def _save_users_to_s3(self) -> None:
+        """Save all users to S3 bucket.
+        
+        Thread-safe operation that serializes all users and writes to S3.
+        """
+        if not self._s3_client or not self._s3_bucket:
+            logger.warning("S3 not configured. Users will not be persisted.")
+            return
+        
+        try:
+            # Serialize all users to JSON
+            users_list = []
+            for user in self.users.values():
+                user_dict = {
+                    'user_id': user.user_id,
+                    'username': user.username,
+                    'password_hash': user.password_hash,
+                    'permissions': user.permissions,
+                    'is_admin': user.is_admin,
+                    'created_at': user.created_at.isoformat(),
+                }
+                users_list.append(user_dict)
+            
+            # Write to S3 (thread-safe, called from within _lock context)
+            content = json.dumps(users_list, indent=2)
+            self._s3_client.put_object(
+                Bucket=self._s3_bucket,
+                Key=self._s3_key,
+                Body=content.encode('utf-8'),
+                ContentType='application/json'
+            )
+            logger.info(f"Successfully saved {len(users_list)} users to S3")
+        except Exception as e:
+            logger.error(f"Failed to save users to S3: {e}")
+            # Don't raise exception - users are still in memory
+    
+    def _create_default_admin_from_env(self) -> None:
+        """Create the default admin user from environment variable.
 
-        This is called during reset() to ensure the default admin always exists.
-        Password is specified by the Phase 2 requirements.
+        This is called when S3 file doesn't exist or S3 is not configured.
+        Requires DEFAULT_ADMIN_PASSWORD_HASH environment variable to be set.
+        
+        The password hash should be generated using auth.hash_password() with the
+        desired plaintext password. For example:
+        from auth import hash_password
+        hash = hash_password("your-password-here")
+        # Set DEFAULT_ADMIN_PASSWORD_HASH environment variable to this hash value
         """
         import uuid
-        from auth import hash_password, generate_token
+        from auth import generate_token
 
-        # Default admin credentials from Phase 2 spec
         default_username = "ece30861defaultadminuser"
-        default_password = "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE packages;"
+        password_hash = os.environ.get("DEFAULT_ADMIN_PASSWORD_HASH")
+        
+        if not password_hash:
+            error_msg = (
+                "DEFAULT_ADMIN_PASSWORD_HASH environment variable is required. "
+                "Set it to the hashed password for the default admin user."
+            )
+            logger.error(error_msg)
+            raise ValueError(error_msg)
 
         # Create default admin user with all permissions
         default_user = User(
             user_id=str(uuid.uuid4()),
             username=default_username,
-            password_hash=hash_password(default_password),
+            password_hash=password_hash,
             permissions=["upload", "search", "download", "admin"],
             is_admin=True,
             created_at=datetime.now(timezone.utc),
         )
 
-        self.users[default_username] = default_user
+        with self._lock:
+            self.users[default_username] = default_user
+            
+            # Save to S3 if configured
+            if self._s3_bucket and self._s3_client:
+                self._save_users_to_s3()
 
         # Create default token (bearer default-admin-token)
         default_token = "default-admin-token"
@@ -648,6 +776,8 @@ class RegistryStorage:
             expires_at=datetime.now(timezone.utc) + timedelta(hours=10),
         )
         self.tokens[default_token] = token_info
+        
+        logger.info(f"Created default admin user: {default_username}")
 
     def create_user(self, user: User) -> User:
         """Create a new user.
@@ -660,6 +790,7 @@ class RegistryStorage:
         """
         with self._lock:
             self.users[user.username] = user
+            self._save_users_to_s3()
         return user
 
     def get_user(self, username: str) -> Optional[User]:
@@ -706,6 +837,7 @@ class RegistryStorage:
                 ]
                 for token in tokens_to_delete:
                     del self.tokens[token]
+                self._save_users_to_s3()
             return user
 
     def list_users(self) -> List[User]:

@@ -85,7 +85,6 @@ def internal_error(error):
 
 
 DEFAULT_USERNAME = "ece30861defaultadminuser"
-DEFAULT_PASSWORD = "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE packages;"
 
 _valid_tokens = set()
 
@@ -104,29 +103,20 @@ def initialize_default_token():
 def initialize_default_admin_user():
     """Initialize the default admin user in storage.
 
-    Creates the default admin user with all permissions if it doesn't already exist.
-    This ensures the autograder and other tools can authenticate with the default credentials.
+    Validates that the default admin user exists. The user should be created
+    via S3 initialization or environment variable during storage initialization.
+    This function serves as a validation check.
     """
-    from auth import hash_password
-    from registry_models import User
-
     # Check if default user already exists
     existing_user = storage.get_user(DEFAULT_USERNAME)
     if existing_user:
         logger.info("Default admin user already exists")
         return
-
-    # Create default admin user with all permissions
-    default_user = User(
-        user_id=str(uuid.uuid4()),
-        username=DEFAULT_USERNAME,
-        password_hash=hash_password(DEFAULT_PASSWORD),
-        permissions=["upload", "search", "download", "admin"],
-        is_admin=True,
-        created_at=datetime.now(timezone.utc),
+    
+    logger.warning(
+        f"Default admin user '{DEFAULT_USERNAME}' not found. "
+        "It should be created during storage initialization from S3 or environment variable."
     )
-    storage.create_user(default_user)
-    logger.info(f"Created default admin user: {DEFAULT_USERNAME}")
 
 
 def check_auth_header():
@@ -1940,26 +1930,9 @@ def authenticate():
 
             return jsonify(token), 200
 
-        # Fall back to old system for backward compatibility (default admin)
-        username_valid = username == DEFAULT_USERNAME
-        password_valid = password == DEFAULT_PASSWORD
-
-        logger.info(
-            f"Auth validation: username_valid={username_valid}, password_valid={password_valid}"
-        )
-
-        if not username_valid or not password_valid:
-            logger.warning(f"Auth failed: invalid credentials for user '{username}'")
-            return jsonify({"error": "The user or password is invalid."}), 401
-
-        token = f"bearer {str(uuid.uuid4())}"
-        _valid_tokens.add(token)
-
-        logger.info(
-            f"Auth successful, token generated, valid_tokens count: {len(_valid_tokens)}"
-        )
-
-        return jsonify(token), 200
+        # User not found or password invalid
+        logger.warning(f"Auth failed: invalid credentials for user '{username}'")
+        return jsonify({"error": "The user or password is invalid."}), 401
     except Exception as e:
         logger.error(f"Auth exception: {str(e)}")
         return jsonify(
