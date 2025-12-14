@@ -68,13 +68,6 @@ def make_model_with_repo(repo: MagicMock) -> MagicMock:
     Returns:
         MagicMock: Mock Model object with repository configured
     """
-
-    Args:
-        repo (MagicMock): Mock repository object.
-
-    Returns:
-        MagicMock: Mock model object.
-    """
     cm = MagicMock()
     cm.__enter__.return_value = repo
     cm.__exit__.return_value = None
@@ -199,11 +192,13 @@ def test_open_readme_returns_empty_when_missing() -> None:
 
 
 def test_count_models_sums_across_extensions() -> None:
-    """Test _count_models with multiple model extensions.
+    """
+    Test _count_models with multiple model extensions.
 
     This test verifies that the `_count_models` method correctly counts the
     number of model files across multiple extensions.
     """
+
     repo = make_repo(
         readme_exists=False,
         models_by_ext={
