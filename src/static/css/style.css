@@ -17,8 +17,12 @@
 }
 
 /* Ensure sufficient color contrast - WCAG 2.1  AA compliant */
-.text-muted {
-    color: #6c757d !important; /* Meets WCAG AA for normal text (4.5:1 contrast ratio) */
+.text-muted,
+.text-muted.small,
+small.text-muted,
+p.text-muted,
+span.text-muted {
+    color: #495057 !important; /* Darker gray (#495057) on light backgrounds exceeds 4.5:1 contrast ratio */
 }
 
 /* Ensure link colors meet contrast requirements */
@@ -61,11 +65,51 @@ a:not(.btn):visited {
     color: #ffffff; /* White text on blue - exceeds 4.5:1 */
 }
 
+/* Ensure outline-primary buttons have sufficient contrast on light backgrounds - WCAG 2.1 AA compliant */
+.btn-outline-primary {
+    color: #084298 !important; /* Darker blue (#084298) on light background (#f8f8f9) exceeds 4.5:1 contrast ratio */
+    border-color: #084298 !important; /* Match border to text color */
+}
+
+.btn-outline-primary:hover,
+.btn-outline-primary:focus {
+    color: #ffffff !important; /* White text on blue background when hovered */
+    background-color: #0d6efd !important; /* Use standard primary blue for hover background */
+    border-color: #0d6efd !important;
+}
+
 /* Ensure login/logout buttons in navbar have sufficient contrast - WCAG 2.1 AA compliant */
 /* btn-outline-light on blue navbar background needs pure white text for 4.5:1 contrast */
+/* Maximum specificity selectors to override Bootstrap's btn-outline-light class */
+/* Direct ID selectors - highest specificity - must come after Bootstrap CSS */
+button#login-btn.btn.btn-outline-light.btn-sm,
+button#logout-btn.btn.btn-outline-light.btn-sm,
+button#login-btn,
+button#logout-btn,
+#login-btn.btn-outline-light,
+#logout-btn.btn-outline-light,
+button.btn-outline-light#login-btn,
+button.btn-outline-light#logout-btn,
+.btn.btn-outline-light#login-btn,
+.btn.btn-outline-light#logout-btn {
+    color: #ffffff !important; /* Pure white (#ffffff) on blue (#0d6efd) = 4.5:1+ contrast ratio */
+    border-color: #ffffff !important; /* White border for visibility */
+}
+
+/* Additional selectors for navbar context to ensure coverage */
 .navbar-dark .btn-outline-light,
 .navbar-dark #login-btn,
-.navbar-dark #logout-btn {
+.navbar-dark #logout-btn,
+.navbar.bg-primary .btn-outline-light,
+.navbar.bg-primary #login-btn,
+.navbar.bg-primary #logout-btn,
+.navbar-dark.bg-primary .btn-outline-light,
+.navbar-dark.bg-primary #login-btn,
+.navbar-dark.bg-primary #logout-btn,
+.navbar-dark button#login-btn,
+.navbar-dark button#logout-btn,
+.navbar-dark button.btn-outline-light#login-btn,
+.navbar-dark button.btn-outline-light#logout-btn {
     color: #ffffff !important; /* Pure white (#ffffff) on blue (#0d6efd) = 4.5:1+ contrast ratio */
     border-color: #ffffff !important; /* White border for visibility */
 }
@@ -351,7 +395,7 @@ h1, h2, h3, h4, h5, h6 {
 /* Ensure code blocks are readable */
 code {
     background-color: #f8f9fa;
-    color: #e83e8c; /* Pink for code - maintains contrast */
+    color: #a91d4f; /* Darker pink/magenta for code - exceeds 4.5:1 contrast ratio on light background (#f8f9fa) */
     padding: 0.125rem 0.25rem;
     border-radius: 0.25rem;
 }
@@ -505,5 +549,21 @@ pre {
     background-color: #cff4fc;
     border-color: #b6effb;
     color: #055160;
+}
+
+/* Ensure log regions are focusable and have visible focus indicators - WCAG 2.1 AA compliant */
+#logs-body:focus,
+[role="log"]:focus {
+    outline: 2px solid #0d6efd;
+    outline-offset: 2px;
+    outline-style: solid;
+}
+
+/* Ensure scrollable regions are focusable and have visible focus indicators - WCAG 2.1.1 compliant */
+.table-responsive:focus,
+.table-responsive[tabindex="0"]:focus {
+    outline: 2px solid #0d6efd;
+    outline-offset: 2px;
+    outline-style: solid;
 }
 
