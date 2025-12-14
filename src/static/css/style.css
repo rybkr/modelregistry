@@ -61,6 +61,26 @@ a:not(.btn):visited {
     color: #ffffff; /* White text on blue - exceeds 4.5:1 */
 }
 
+/* Ensure login/logout buttons in navbar have sufficient contrast - WCAG 2.1 AA compliant */
+/* btn-outline-light on blue navbar background needs pure white text for 4.5:1 contrast */
+.navbar-dark .btn-outline-light,
+.navbar-dark #login-btn,
+.navbar-dark #logout-btn {
+    color: #ffffff !important; /* Pure white (#ffffff) on blue (#0d6efd) = 4.5:1+ contrast ratio */
+    border-color: #ffffff !important; /* White border for visibility */
+}
+
+.navbar-dark .btn-outline-light:hover,
+.navbar-dark .btn-outline-light:focus,
+.navbar-dark #login-btn:hover,
+.navbar-dark #login-btn:focus,
+.navbar-dark #logout-btn:hover,
+.navbar-dark #logout-btn:focus {
+    color: #0d6efd !important; /* Blue text on white background when hovered */
+    background-color: #ffffff !important; /* White background on hover */
+    border-color: #ffffff !important;
+}
+
 .btn-success {
     background-color: #198754;
     border-color: #198754;
