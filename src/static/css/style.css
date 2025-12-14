@@ -227,6 +227,40 @@ textarea:focus-visible {
     background-color: #ffffff !important; /* Explicit white background for contrast calculation */
 }
 
+/* Ensure status cards with colored backgrounds maintain their backgrounds and text contrast - WCAG 2.1 AA compliant */
+.card.bg-success,
+.card.bg-success .card-body,
+#status-card,
+#status-card .card-body {
+    background-color: #198754 !important; /* Bootstrap success green - explicit for contrast calculation */
+}
+
+.card.bg-danger,
+.card.bg-danger .card-body {
+    background-color: #dc3545 !important; /* Bootstrap danger red - explicit for contrast calculation */
+}
+
+/* Ensure text in colored status cards is white for sufficient contrast - WCAG 2.1 AA compliant */
+.card.text-white h3,
+.card.text-white .card-title,
+.card.text-white h3.card-title,
+#status-card h3,
+#status-card .card-title,
+#status-card h3.card-title,
+#status-card .card-title.h5 {
+    color: #ffffff !important; /* White text on green background (#198754) = 4.5:1+ contrast ratio */
+}
+
+.card.text-white p,
+.card.text-white .card-text,
+.card.text-white #health-status,
+#status-card p,
+#status-card .card-text,
+#status-card #health-status,
+#status-card .card-text.h4 {
+    color: #ffffff !important; /* White text on green background (#198754) = 4.5:1+ contrast ratio */
+}
+
 .card:hover {
     box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075), 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
 }
