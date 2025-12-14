@@ -31,7 +31,7 @@ span.text-muted {
 span.small.text-muted,
 span.text-muted.small {
     color: #495057 !important; /* Darker gray (#495057) on light backgrounds exceeds 4.5:1 contrast ratio for small text */
-    background-color: transparent !important; /* Explicit transparent background to ensure contrast checker can determine background */
+    background-color: #ffffff !important; /* Explicit white background to ensure contrast checker can determine background */
 }
 
 /* Ensure log entry text-muted elements have explicit backgrounds and sufficient contrast */
@@ -41,16 +41,34 @@ span.text-muted.small {
 .log-entry span.text-muted,
 .log-entry span.small.text-muted {
     color: #495057 !important; /* Darker gray for sufficient contrast */
-    background-color: transparent !important; /* Explicit transparent background */
+    background-color: #ffffff !important; /* Explicit white background to ensure contrast checker can determine background */
+}
+
+/* Ensure log entry flex containers have explicit backgrounds for contrast calculation */
+.log-entry .d-flex,
+.log-entry .justify-content-between,
+.log-entry .d-flex.justify-content-between,
+.log-entry .d-flex.align-items-center,
+.log-entry .d-flex.justify-content-between.align-items-center {
+    background-color: #ffffff !important; /* Explicit white background for contrast calculation */
 }
 
 /* Ensure log entry containers have explicit background colors for contrast calculation */
-.log-entry {
-    background-color: transparent !important; /* Explicit background for contrast calculation */
+.log-entry,
+.log-entry.border-bottom,
+.log-entry.py-2,
+.log-entry.border-bottom.py-2 {
+    background-color: #ffffff !important; /* Explicit white background for contrast calculation */
 }
 
 #logs-body {
     background-color: #ffffff !important; /* Explicit white background for log container */
+}
+
+/* Ensure card containers in health dashboard have explicit backgrounds */
+.col-lg-6 .card,
+.col-lg-6 .card.h-100 {
+    background-color: #ffffff !important; /* Explicit white background for contrast calculation */
 }
 
 /* Ensure link colors meet contrast requirements */
