@@ -1,7 +1,19 @@
+"""Tests for health dashboard endpoints and activity reporting.
+
+This module contains tests for the health dashboard API endpoints including
+activity logs, system logs, and health status reporting. Tests verify that
+recent operations are properly logged and accessible through the health API.
+"""
+
 from __future__ import annotations
 
 
 def test_health_activity_reports_recent_events(client) -> None:
+    """Test that health activity endpoint reports recent package events.
+
+    Args:
+        client: Flask test client fixture
+    """
     payload = {
         "name": "vision-model",
         "version": "1.0.0",
@@ -28,6 +40,13 @@ def test_health_activity_reports_recent_events(client) -> None:
 
 
 def test_health_logs_include_recent_operations(client) -> None:
+    """Test that health logs endpoint includes recent operations.
+
+    Verifies that system logs capture package upload and deletion operations.
+
+    Args:
+        client: Flask test client fixture
+    """
     payload = {
         "name": "text-generator",
         "version": "2.0.0",

@@ -1,9 +1,28 @@
+"""Lineage tracking for model dependencies and relationships.
+
+This module provides functionality to build dependency graphs between models
+based on their configuration files (e.g., base_model references) and compute
+scores based on parent model quality. It supports HuggingFace model lineage
+tracking through config.json analysis.
+"""
+
 from urllib.parse import urlparse
 from registry_models import Package
 from typing import Optional, List
 
 
 def extract_hf_id(url: str) -> Optional[str]:
+    """Extract HuggingFace repository ID from a URL.
+
+    Parses a HuggingFace URL and extracts the organization/repository identifier.
+    Handles URLs for models, datasets, and spaces.
+
+    Args:
+        url: HuggingFace URL (e.g., "https://huggingface.co/org/model-name")
+
+    Returns:
+        Optional[str]: Repository ID in format "org/repo" or None if URL is invalid
+    """
     if not url or "huggingface.co" not in url.lower():
         return None
     parsed = urlparse(url)
@@ -17,7 +36,25 @@ def build_lineage_graph(
     root_id: str,
     all_packages: list[Package],
     load_config_fn,
-):
+) -> dict:
+    """Build a lineage graph showing model dependencies.
+
+    Traverses model dependencies starting from a root package, following
+    base_model and _name_or_path references in configuration files to build
+    a graph of parent-child relationships.
+
+    Args:
+        root_id: ID of the root package to start traversal from
+        all_packages: List of all packages in the registry
+        load_config_fn: Function to load config.json from a package
+            (signature: Package -> Optional[dict])
+
+    Returns:
+        dict: Graph structure with "nodes" and "edges" keys:
+            - nodes: List of node dictionaries with artifact_id, name, source
+            - edges: List of edge dictionaries with from_node_artifact_id,
+              to_node_artifact_id, and relationship type
+    """
     nodes = {}
     edges = set()
     visited = set()
@@ -92,7 +129,22 @@ def build_lineage_graph(
     }
 
 
-def compute_tree_score(root_id: str, lineage_graph: dict, score_lookup_fn):
+def compute_tree_score(root_id: str, lineage_graph: dict, score_lookup_fn) -> float:
+    """Compute a tree score based on parent model quality.
+
+    Calculates the average score of all parent models in the lineage graph
+    for a given root package. This provides a measure of inherited quality
+    from base models.
+
+    Args:
+        root_id: ID of the root package to compute score for
+        lineage_graph: Lineage graph structure from build_lineage_graph()
+        score_lookup_fn: Function to get score for a package ID
+            (signature: str -> Optional[float])
+
+    Returns:
+        float: Average score of parent models, or 0.0 if no parents found
+    """
     parent_scores = []
     for edge in lineage_graph["edges"]:
         if edge["to_node_artifact_id"] == root_id:

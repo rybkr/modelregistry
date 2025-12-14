@@ -18,21 +18,45 @@ BASE_URL = "http://127.0.0.1:8000"
 
 
 def _wait_for_element(driver: webdriver.Chrome, by: By, value: str, timeout: int = 10):
-    """Wait for an element to be present."""
+    """Wait for an element to be present in the DOM.
+
+    Args:
+        driver: Selenium WebDriver instance
+        by: Locator strategy (By.ID, By.CSS_SELECTOR, etc.)
+        value: Locator value
+        timeout: Maximum time to wait in seconds (default: 10)
+
+    Returns:
+        WebElement: The found element
+    """
     return WebDriverWait(driver, timeout).until(
         EC.presence_of_element_located((by, value))
     )
 
 
 def _wait_for_clickable(driver: webdriver.Chrome, by: By, value: str, timeout: int = 10):
-    """Wait for an element to be clickable."""
+    """Wait for an element to be clickable.
+
+    Args:
+        driver: Selenium WebDriver instance
+        by: Locator strategy (By.ID, By.CSS_SELECTOR, etc.)
+        value: Locator value
+        timeout: Maximum time to wait in seconds (default: 10)
+
+    Returns:
+        WebElement: The clickable element
+    """
     return WebDriverWait(driver, timeout).until(
         EC.element_to_be_clickable((by, value))
     )
 
 
 def _create_test_package() -> str:
-    """Create a test package and return its ID."""
+    """Create a test package via API and return its ID.
+
+    Returns:
+        str: Package ID of the created package
+    """
     payload = {
         "name": "Test Detail Model",
         "version": "2.0.0",

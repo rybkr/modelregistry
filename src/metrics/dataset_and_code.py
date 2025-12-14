@@ -1,3 +1,12 @@
+"""Dataset and Code Availability metric for evaluating reproducibility.
+
+This module implements the DatasetAndCode metric, which uses LLM-based semantic
+analysis to determine if a model's README mentions datasets and code resources
+needed for reproducibility. It identifies references even when phrased in
+non-standard ways, providing scores for dataset availability, code availability,
+and overall reproducibility.
+"""
+
 from __future__ import annotations
 
 import json
@@ -16,7 +25,15 @@ from resources.base_resource import _BaseResource
 
 
 def try_readme(resource: _BaseResource, filename: str = "README.md") -> Optional[str]:
-    """Attempt to fetch README.md via the resource's RepoView."""
+    """Attempt to fetch README.md via the resource's RepoView.
+
+    Args:
+        resource: Resource instance to read README from
+        filename: Name of README file (default: "README.md")
+
+    Returns:
+        Optional[str]: README content or None if not found/readable
+    """
     try:
         with resource.open_files(allow_patterns=[filename]) as repo:
             if repo.exists(filename):
@@ -34,7 +51,23 @@ _BASE_URL = "https://genai.rcac.purdue.edu/api"
 
 
 def _query_genai(prompt: str, model: str = "llama3.1:latest") -> Dict[str, Any]:
-    """Call Purdue GenAI and return {'score': float, 'justification': str}."""
+    """Call Purdue GenAI API and return structured response.
+
+    Sends a prompt to the Purdue GenAI API and parses the response into
+    a structured format with score and justification.
+
+    Args:
+        prompt: Text prompt to send to the LLM
+        model: Model name to use (default: "llama3.1:latest")
+
+    Returns:
+        Dict[str, Any]: Response dictionary with 'score' (float) and
+            'justification' (str) keys
+
+    Raises:
+        ValueError: If PURDUE_GENAI_API_KEY is not set
+        requests.RequestException: If API request fails
+    """
     if not _API_KEY:
         raise ValueError("Missing PURDUE_GENAI_API_KEY in config.env")
 

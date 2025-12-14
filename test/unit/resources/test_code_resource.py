@@ -1,3 +1,11 @@
+"""Unit tests for CodeResource class.
+
+This module contains unit tests for the CodeResource class, which handles
+access to code repositories from multiple platforms (HuggingFace Spaces,
+GitHub, GitLab). Tests cover metadata fetching, platform detection, caching,
+and file access functionality.
+"""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch

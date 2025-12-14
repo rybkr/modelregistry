@@ -1,3 +1,11 @@
+"""Model evaluator for batch processing of model URLs.
+
+This module provides a command-line interface for evaluating multiple models
+from a file containing URLs. It processes each URL, computes quality metrics,
+and outputs results in NDJSON (newline-delimited JSON) format for easy
+streaming and processing.
+"""
+
 import json
 import sys
 from pathlib import Path
@@ -15,6 +23,16 @@ def main(path: str) -> None:
     using the metrics engine, and outputs the results as newline-delimited
     JSON (NDJSON) to stdout. Each line of output represents one model's
     evaluation results.
+
+    Args:
+        path: Path to file containing model URLs, one per line.
+            Lines starting with '#' or empty lines are skipped.
+
+    Output:
+        Prints NDJSON to stdout, where each line is a JSON object containing:
+        - name: The model URL
+        - category: "MODEL"
+        - All metric results from compute_all_metrics()
     """
     urls = Path(path).read_text().splitlines()
     for url in urls:

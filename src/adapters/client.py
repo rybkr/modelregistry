@@ -1,3 +1,11 @@
+"""HTTP client for interacting with external APIs.
+
+This module provides a base HTTP client class with retry logic, rate limiting
+handling, and error conversion. It's used by adapters to communicate with
+HuggingFace, GitHub, and other external APIs with robust error handling and
+automatic retries for transient failures.
+"""
+
 import time
 from typing import Any, Optional
 from urllib.parse import quote_plus, urlparse
@@ -182,6 +190,14 @@ class GitHubClient(_Client):
         super().__init__(base_url=base_url)
 
     def _github_owner_repo_from_url(self, url: str) -> tuple[str, str]:
+        """Extract owner and repository name from a GitHub URL.
+
+        Args:
+            url: GitHub repository URL
+
+        Returns:
+            tuple[str, str]: (owner, repository_name)
+        """
         path = urlparse(url)
         parts = [x for x in path.path.strip("/").split("/") if x]
         return parts[0], parts[1]
@@ -384,6 +400,14 @@ class GitLabClient(_Client):
         super().__init__(base_url=base_url)
 
     def _gitlab_owner_repo_from_url(self, url: str) -> str:
+        """Extract namespace path from a GitLab URL.
+
+        Args:
+            url: GitLab repository URL
+
+        Returns:
+            str: Namespace path (e.g., "group/sub/repo")
+        """
         path = urlparse(url)
         parts = [x for x in path.path.strip("/").split("/") if x]
         return "/".join(parts)

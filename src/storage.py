@@ -1,3 +1,17 @@
+"""Storage layer for the Model Registry.
+
+This module provides in-memory storage for packages, users, and authentication tokens.
+It includes CRUD operations, search functionality with regex support (with ReDoS protection),
+activity logging, and optional AWS S3 integration for file storage.
+
+The storage system supports:
+- Package management (create, read, update, delete, search)
+- User and token management
+- Activity logging and audit trails
+- Regex-based search with security protections
+- Remote README fetching for search operations
+"""
+
 from __future__ import annotations
 
 import base64

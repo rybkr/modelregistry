@@ -1,3 +1,10 @@
+"""URL handler for processing model URLs and creating Model instances.
+
+This module provides functionality to parse URLs from files and create Model
+instances with associated code, dataset, and model resources. It also includes
+logic to detect shared datasets between models.
+"""
+
 from typing import Optional
 
 from models import Model

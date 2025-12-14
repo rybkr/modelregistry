@@ -1,3 +1,11 @@
+"""Unit tests for License metric.
+
+This module contains unit tests for the License metric, which evaluates
+license clarity and LGPLv2.1 compatibility using LLM-based analysis of
+README files and metadata. Tests cover license detection, compatibility
+checking, and scoring logic.
+"""
+
 from __future__ import annotations
 
 from contextlib import contextmanager

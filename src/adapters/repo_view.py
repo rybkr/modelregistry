@@ -1,3 +1,11 @@
+"""Repository view interface for unified file access across repository types.
+
+This module provides the RepoView class, which offers a unified interface for
+reading files from various repository types (HuggingFace, GitHub, GitLab) regardless
+of their underlying storage mechanism. It provides methods for checking file existence,
+reading text/JSON files, glob pattern matching, and querying file sizes.
+"""
+
 from __future__ import annotations
 
 import json
@@ -8,7 +16,15 @@ from typing import Any, Iterable
 
 @dataclass
 class RepoView:
-    """A class to interact with a repository's file system."""
+    """A unified interface for interacting with repository file systems.
+
+    Provides a consistent API for reading files from various repository types
+    (HuggingFace, GitHub, GitLab) through a common interface. All file paths
+    are relative to the repository root.
+
+    Attributes:
+        root: Path to the repository root directory
+    """
 
     root: Path
 

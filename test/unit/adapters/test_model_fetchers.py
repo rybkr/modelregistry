@@ -1,3 +1,11 @@
+"""Unit tests for model fetchers.
+
+This module contains unit tests for the HFModelFetcher class, which handles
+downloading and accessing files from HuggingFace model repositories. Tests
+cover snapshot downloading, file reading, large file filtering, and context
+manager behavior.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

@@ -1,3 +1,11 @@
+"""Net Score metric for computing weighted aggregate quality scores.
+
+This module implements the NetScore metric, which combines multiple quality
+metrics into a single weighted score. The weights reflect the relative importance
+of each metric, with core metrics (license, ramp-up time, bus factor) receiving
+higher weights than optional metrics (dataset quality, code quality).
+"""
+
 from __future__ import annotations
 
 import statistics
@@ -31,13 +39,20 @@ class NetScore(Metric):
         super().__init__(name="net_score")
 
     def evaluate(self, metrics: list[Metric]) -> None:
-        """Run all metrics, aggregate results, and compute weighted net score.
+        """Compute weighted net score from a list of metric results.
+
+        Aggregates multiple metric scores into a single weighted average, where
+        each metric's contribution is weighted according to METRIC_WEIGHTS.
+        Handles special cases like size_score (dictionary of device scores) by
+        averaging the device scores first.
 
         Args:
-            metrics: List of Metric objects to include in the weighted score.
+            metrics: List of Metric objects with computed values to include
+                in the weighted score calculation
 
-        Returns:
-            None
+        Note:
+            Sets self.value to the computed net score (0.0-1.0) and
+            self.latency_ms to the computation time in milliseconds
         """
         logger.info("Computing NetScore...")
         start = time.perf_counter()

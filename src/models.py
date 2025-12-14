@@ -1,3 +1,11 @@
+"""Data models for representing ML models and evaluation metrics.
+
+This module defines Pydantic models for representing machine learning models
+with their associated resources (code, datasets) and evaluation metrics.
+It includes models for size compatibility scores and complete metric sets
+for model quality assessment.
+"""
+
 from typing import Annotated, Optional
 
 from pydantic import BaseModel, Field, StringConstraints

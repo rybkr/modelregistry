@@ -17,7 +17,17 @@ BASE_URL = "http://127.0.0.1:8000"
 
 
 def _wait_for_element(driver: webdriver.Chrome, by: By, value: str, timeout: int = 10):
-    """Wait for an element to be present."""
+    """Wait for an element to be present in the DOM.
+
+    Args:
+        driver: Selenium WebDriver instance
+        by: Locator strategy (By.ID, By.CSS_SELECTOR, etc.)
+        value: Locator value
+        timeout: Maximum time to wait in seconds (default: 10)
+
+    Returns:
+        WebElement: The found element
+    """
     return WebDriverWait(driver, timeout).until(
         EC.presence_of_element_located((by, value))
     )
@@ -31,7 +41,11 @@ def _wait_for_clickable(driver: webdriver.Chrome, by: By, value: str, timeout: i
 
 
 def _create_test_packages(count: int = 3) -> None:
-    """Create test packages."""
+    """Create test packages via API for use in E2E tests.
+
+    Args:
+        count: Number of packages to create (default: 3)
+    """
     for i in range(count):
         payload = {
             "name": f"Test Model {i+1}",

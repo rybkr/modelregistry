@@ -1,3 +1,9 @@
+"""Tests for metrics validation and golden file compliance.
+
+This module validates that the Metrics Pydantic model correctly validates
+test data from the golden file, ensuring schema compliance and data integrity.
+"""
+
 import json
 import pathlib
 

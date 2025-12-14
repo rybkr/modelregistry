@@ -1,3 +1,11 @@
+"""Selenium end-to-end tests for the Packages listing page.
+
+This module contains comprehensive Selenium-based tests for the main packages
+listing page, including package display, search functionality, filtering,
+sorting, pagination, and regex search capabilities. Tests verify both UI
+functionality and accessibility features.
+"""
+
 from __future__ import annotations
 
 import os
@@ -105,6 +113,13 @@ def browser(api_server: str) -> Iterator[webdriver.Chrome]:
 
 
 def _create_package(name: str, version: str, url: str) -> None:
+    """Create a test package via API for use in E2E tests.
+
+    Args:
+        name: Package name
+        version: Package version
+        url: Package URL
+    """
     payload = {
         "name": name,
         "version": version,
@@ -132,6 +147,11 @@ def _wait_for_package_cards(driver: webdriver.Chrome, minimum: int) -> list[str]
 
 
 def _wait_for_no_results(driver: webdriver.Chrome) -> None:
+    """Wait for "No packages" message to appear in search results.
+
+    Args:
+        driver: Selenium WebDriver instance
+    """
     wait = WebDriverWait(driver, 10)
     wait.until(
         EC.text_to_be_present_in_element(

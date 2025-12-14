@@ -1,3 +1,11 @@
+"""Dataset fetcher for downloading and accessing HuggingFace dataset repositories.
+
+This module provides the HFDatasetFetcher class, which handles downloading
+snapshots of HuggingFace dataset repositories and providing access to dataset
+files through a RepoView interface. It filters files by size and pattern to
+prevent downloading excessively large files.
+"""
+
 from __future__ import annotations
 
 from typing import Iterable, Optional

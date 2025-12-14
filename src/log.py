@@ -1,4 +1,15 @@
-# log.py
+"""Logging configuration for the Model Registry.
+
+This module provides a configurable logger that can be set up via environment
+variables. It supports file-based logging, console logging, and configurable
+log levels. The logger is designed to be silent by default and can be enabled
+for debugging or production monitoring.
+
+Environment Variables:
+    LOG_FILE: Path to log file (if not set, logging is disabled)
+    LOG_LEVEL: Logging level (0=silent, 1=info, 2=debug, default=0)
+"""
+
 import logging
 import os
 import sys
@@ -7,8 +18,16 @@ import sys
 def setup_logger() -> logging.Logger:
     """Configure logging based on environment variables.
 
-    LOG_FILE   -> file path for log output
-    LOG_LEVEL  -> 0 (silent), 1 (info), 2 (debug). Default = 0.
+    Creates and configures a logger instance based on LOG_FILE and LOG_LEVEL
+    environment variables. If LOG_FILE is not set, logging is effectively
+    disabled. The logger uses a standard format with timestamps and log levels.
+
+    Environment Variables:
+        LOG_FILE: Path to log file (optional, disables logging if not set)
+        LOG_LEVEL: Logging verbosity (0=silent, 1=info, 2=debug, default=0)
+
+    Returns:
+        logging.Logger: Configured logger instance named "cli_logger"
     """
     log_file = os.environ.get("LOG_FILE")
     try:

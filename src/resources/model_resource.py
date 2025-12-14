@@ -1,3 +1,11 @@
+"""Model resource for accessing HuggingFace model information and files.
+
+This module provides the ModelResource class, which represents a machine learning
+model hosted on HuggingFace. It handles fetching model metadata (model card,
+config, etc.) and provides access to model repository files including weights,
+configurations, and documentation through a RepoView interface.
+"""
+
 from typing import Any, ContextManager, Iterable, Optional
 from adapters.client import HFClient
 from adapters.model_fetchers import HFModelFetcher

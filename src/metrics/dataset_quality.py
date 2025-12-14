@@ -1,3 +1,11 @@
+"""Dataset Quality metric for evaluating dataset trustworthiness.
+
+This module implements the DatasetQuality metric, which assesses dataset quality
+based on metadata completeness (description, license, homepage), license clarity,
+update recency, and community validation signals (stars, forks, watchers).
+Combines multiple sub-metrics into an overall dataset quality score.
+"""
+
 from __future__ import annotations
 
 import time
@@ -10,7 +18,15 @@ from resources.base_resource import _BaseResource
 
 
 def try_readme(resource: _BaseResource, filename: str = "README.md") -> Optional[str]:
-    """Attempt to fetch README.md via the resource's RepoView."""
+    """Attempt to fetch README.md via the resource's RepoView.
+
+    Args:
+        resource: Resource instance to read README from
+        filename: Name of README file (default: "README.md")
+
+    Returns:
+        Optional[str]: README content or None if not found/readable
+    """
     try:
         with resource.open_files(allow_patterns=[filename]) as repo:
             if repo.exists(filename):
@@ -21,26 +37,56 @@ def try_readme(resource: _BaseResource, filename: str = "README.md") -> Optional
 
 
 class DatasetQuality(Metric):
-    """Metric for evaluating dataset quality using metadata and repository info."""
+    """Metric for evaluating dataset quality using metadata and repository info.
+
+    Combines multiple quality signals including documentation completeness,
+    license clarity, update recency, and community engagement to produce
+    an overall dataset quality score.
+    """
 
     def __init__(self) -> None:
+        """Initialize the DatasetQuality metric."""
         super().__init__(name="dataset_quality")
 
     # --- Sub-metrics ---
     def _documentation_score(self, dataset: Dict[str, Any]) -> float:
-        """Check for dataset card fields like description, license, homepage."""
+        """Check for dataset card fields like description, license, homepage.
+
+        Args:
+            dataset: Dataset metadata dictionary
+
+        Returns:
+            float: Score from 0.0 to 1.0 based on presence of required fields
+        """
         required_fields = ["description", "license", "homepage"]
         present = sum(1 for field in required_fields if dataset.get(field))
         return present / len(required_fields)
 
     def _license_and_citation_score(self, dataset: Dict[str, Any]) -> float:
-        """Score license clarity (GitHub API provides license.name)."""
+        """Score license clarity (GitHub API provides license.name).
+
+        Args:
+            dataset: Dataset metadata dictionary
+
+        Returns:
+            float: 1.0 if license name is present, 0.0 otherwise
+        """
         if dataset.get("license") and dataset["license"].get("name"):
             return 1.0
         return 0.0
 
     def _freshness_score(self, dataset: Dict[str, Any]) -> float:
-        """Score based on updated_at field (ISO date string)."""
+        """Score based on updated_at field (ISO date string).
+
+        Evaluates how recently the dataset was updated, with more recent
+        updates receiving higher scores.
+
+        Args:
+            dataset: Dataset metadata dictionary
+
+        Returns:
+            float: Score from 0.0 to 1.0 based on update recency
+        """
         updated_at: Optional[str] = dataset.get("updated_at")
         if not updated_at:
             return 0.5

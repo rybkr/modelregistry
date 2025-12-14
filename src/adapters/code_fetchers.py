@@ -1,3 +1,11 @@
+"""Code fetcher for downloading and accessing code repositories from multiple platforms.
+
+This module provides functionality to download and access code repositories from
+HuggingFace Spaces, GitHub, and GitLab. It handles URL parsing, platform detection,
+repository snapshot downloading, and provides a unified RepoView interface for
+accessing repository files regardless of the source platform.
+"""
+
 from __future__ import annotations
 
 import io
@@ -71,15 +79,43 @@ def open_codebase(
 
 
 def _parse(url: str) -> tuple[str, list[str]]:
+    """Parse a URL into hostname and path components.
+
+    Args:
+        url: URL to parse
+
+    Returns:
+        tuple: (hostname in lowercase, list of path components)
+    """
     p = urlparse(url)
     return p.netloc.lower(), [x for x in p.path.strip("/").split("/") if x]
 
 
 def _is_hf_space(host: str, parts: list[str]) -> bool:
+    """Check if URL represents a HuggingFace Space.
+
+    Args:
+        host: URL hostname
+        parts: URL path components
+
+    Returns:
+        bool: True if URL is a HuggingFace Space, False otherwise
+    """
     return host == "huggingface.co" and len(parts) >= 3 and parts[0] == "spaces"
 
 
 def _extract_rev(parts: list[str]) -> Optional[str]:
+    """Extract revision (branch/tag/commit) from URL path components.
+
+    Looks for revision indicators like "tree", "blob", or "resolve" in the
+    path and returns the following component as the revision.
+
+    Args:
+        parts: URL path components
+
+    Returns:
+        Optional[str]: Revision identifier or None if not found
+    """
     for i in range(len(parts) - 1):
         if parts[i] in {"tree", "blob", "resolve"}:
             return parts[i + 1]
@@ -87,7 +123,12 @@ def _extract_rev(parts: list[str]) -> Optional[str]:
 
 
 class _HFSpaceFetcher(_BaseSnapshotFetcher):
-    """Fetcher for Hugging Face Space repositories."""
+    """Fetcher for Hugging Face Space repositories.
+
+    Downloads HuggingFace Space repositories using snapshot_download and provides
+    access through a RepoView interface. Filters files by pattern to download
+    only relevant code files.
+    """
 
     def __init__(
         self,
@@ -112,7 +153,11 @@ class _HFSpaceFetcher(_BaseSnapshotFetcher):
 
 
 class _GitHubCodeFetcher(AbstractContextManager[RepoView]):
-    """A context manager for fetching and extracting GitHub repositories as tarballs."""
+    """A context manager for fetching and extracting GitHub repositories as tarballs.
+
+    Downloads GitHub repositories as tarballs, extracts them, and provides
+    access through a RepoView interface. Supports authentication via personal access tokens.
+    """
 
     def __init__(
         self,
@@ -124,11 +169,10 @@ class _GitHubCodeFetcher(AbstractContextManager[RepoView]):
         """Initialize the GitHubCodeFetcher with repository details.
 
         Args:
-            owner (str): The owner of the GitHub repository.
-            repo (str): The name of the GitHub repository.
-            ref (Optional[str]): The branch, tag, or commit to fetch.
-                Defaults to "main".
-            token (Optional[str]): A GitHub personal access token for authentication.
+            owner: The owner/organization of the GitHub repository
+            repo: The name of the GitHub repository
+            ref: The branch, tag, or commit to fetch (defaults to default branch)
+            token: A GitHub personal access token for authentication (optional)
         """
         self.owner = owner
         self.repo = repo
@@ -141,6 +185,14 @@ class _GitHubCodeFetcher(AbstractContextManager[RepoView]):
         self._root: Optional[Path] = None
 
     def __enter__(self) -> RepoView:
+        """Enter context manager and download GitHub repository.
+
+        Downloads the repository as a tarball, extracts it, and returns
+        a RepoView for accessing the files.
+
+        Returns:
+            RepoView: View of the downloaded repository
+        """
         self._tmp_dir = tempfile.TemporaryDirectory(prefix="mac")
         root = Path(self._tmp_dir.name)
 
@@ -161,6 +213,16 @@ class _GitHubCodeFetcher(AbstractContextManager[RepoView]):
         exc_value: Optional[BaseException],
         traceback: Optional[object],
     ) -> None:
+        """Exit context manager and clean up temporary resources.
+
+        Args:
+            exc_type: Exception type if an exception occurred
+            exc_value: Exception instance if an exception occurred
+            traceback: Traceback object if an exception occurred
+
+        Returns:
+            None
+        """
         try:
             if self._tmp_dir:
                 self._tmp_dir.cleanup()
@@ -170,7 +232,11 @@ class _GitHubCodeFetcher(AbstractContextManager[RepoView]):
 
 
 class _GitLabCodeFetcher(AbstractContextManager[RepoView]):
-    """A context manager for fetching and extracting GitLab repositories as a tar.gz."""
+    """A context manager for fetching and extracting GitLab repositories as a tar.gz.
+
+    Downloads GitLab repositories as tar.gz archives, extracts them, and provides
+    access through a RepoView interface. Supports authentication via personal access tokens.
+    """
 
     def __init__(
         self,
@@ -181,10 +247,9 @@ class _GitLabCodeFetcher(AbstractContextManager[RepoView]):
         """Initialize the GitLabCodeFetcher with repository details.
 
         Args:
-            ns_name (str): The namespace of the GitHub repository.
-            ref (Optional[str]): The branch, tag, or commit to fetch.
-                Defaults to "main".
-            token (Optional[str]): A GitLab personal access token for authentication.
+            ns_name: The namespace/path of the GitLab repository (e.g., "group/sub/repo")
+            ref: The branch, tag, or commit to fetch (defaults to default branch)
+            token: A GitLab personal access token for authentication (optional)
         """
         self.ns_name = ns_name
         self.ref = ref or GitLabClient().get_metadata(
@@ -195,6 +260,14 @@ class _GitLabCodeFetcher(AbstractContextManager[RepoView]):
         self._root: Optional[Path] = None
 
     def __enter__(self) -> RepoView:
+        """Enter context manager and download GitLab repository.
+
+        Downloads the repository as a tar.gz archive, extracts it, and returns
+        a RepoView for accessing the files.
+
+        Returns:
+            RepoView: View of the downloaded repository
+        """
         self._tmp_dir = tempfile.TemporaryDirectory(prefix="mac_")
         root = Path(self._tmp_dir.name)
 
@@ -216,6 +289,16 @@ class _GitLabCodeFetcher(AbstractContextManager[RepoView]):
         exc_value: Optional[BaseException],
         traceback: Optional[object],
     ) -> None:
+        """Exit context manager and clean up temporary resources.
+
+        Args:
+            exc_type: Exception type if an exception occurred
+            exc_value: Exception instance if an exception occurred
+            traceback: Traceback object if an exception occurred
+
+        Returns:
+            None
+        """
         try:
             if self._tmp_dir:
                 self._tmp_dir.cleanup()
@@ -225,6 +308,19 @@ class _GitLabCodeFetcher(AbstractContextManager[RepoView]):
 
 
 def _extract_tarball(url: str, headers: dict[str, Any], dest: Path) -> None:
+    """Download and extract a tarball archive to a destination directory.
+
+    Downloads a tar.gz archive from the given URL and extracts it to the
+    destination path. Handles HTTP errors and network exceptions.
+
+    Args:
+        url: URL to download the tarball from
+        headers: HTTP headers to include in the request
+        dest: Destination directory path for extraction
+
+    Raises:
+        AppError: If download fails (HTTP_ERROR) or network error occurs (NETWORK_ERROR)
+    """
     try:
         response = requests.get(url, headers=headers, allow_redirects=True)
         response.raise_for_status()
@@ -256,5 +352,17 @@ def _extract_tarball(url: str, headers: dict[str, Any], dest: Path) -> None:
 
 
 def _top_dir(root: Path) -> Path:
+    """Find the top-level directory in an extracted archive.
+
+    When archives are extracted, they typically create a single top-level
+    directory containing all files. This function finds and returns that
+    directory, or the root itself if no subdirectory exists.
+
+    Args:
+        root: Root directory to search for top-level subdirectory
+
+    Returns:
+        Path: Path to the top-level directory, or root if none found
+    """
     dirs = [p for p in root.iterdir() if p.is_dir()]
     return dirs[0] if dirs else root

@@ -1,3 +1,11 @@
+"""Unit tests for RampUpTime metric.
+
+This module contains unit tests for the RampUpTime metric, which evaluates
+how quickly new users can start using a model repository. Tests cover
+README quality assessment, code example detection, installation instructions,
+model file availability, and overall ramp-up time scoring.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -19,14 +27,17 @@ def make_repo(
 ) -> MagicMock:
     """Create a mock repository with specified README and model files.
 
+    Helper function for creating mock repository objects with configurable
+    README content and model file structure for testing ramp-up time scoring.
+
     Args:
-        readme_exists (bool): Whether the README file exists.
-        readme_text (str, optional): Content of the README file. Defaults to "".
-        models_by_ext (Dict[str, Iterable[Path]] | None, optional): Dictionary
-            mapping file extensions to lists of model file paths. Defaults to None.
+        readme_exists: Whether the README file exists in the repository
+        readme_text: Content of the README file (default: empty string)
+        models_by_ext: Dictionary mapping file extensions to lists of model
+            file paths (default: None)
 
     Returns:
-        MagicMock: Mock repository object.
+        MagicMock: Mock repository object with configured behavior
     """
     repo = MagicMock()
 
@@ -47,6 +58,16 @@ def make_repo(
 
 def make_model_with_repo(repo: MagicMock) -> MagicMock:
     """Create a mock model with an associated repository.
+
+    Helper function for creating mock Model objects with configured repository
+    behavior for testing ramp-up time metric computation.
+
+    Args:
+        repo: Mock repository object to associate with the model
+
+    Returns:
+        MagicMock: Mock Model object with repository configured
+    """
 
     Args:
         repo (MagicMock): Mock repository object.

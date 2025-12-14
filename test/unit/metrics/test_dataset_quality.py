@@ -1,3 +1,11 @@
+"""Unit tests for DatasetQuality metric.
+
+This module contains unit tests for the DatasetQuality metric, which evaluates
+dataset trustworthiness based on metadata completeness, license clarity, update
+recency, and community validation. Tests cover various dataset configurations
+and scoring scenarios.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Dict, cast
