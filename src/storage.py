@@ -308,7 +308,7 @@ class RegistryStorage:
                             path = urlparse(url).path.strip("/").split("/")
                             owner = path[0]
                             repo = path[1]
-                            token = os.environ["GH_API_TOKEN"]
+                            token = os.environ["GITHUB_TOKEN"]
                             headers = { "Authorization": f"Bearer {token}" }
                             readme_url = f"https://api.github.com/repos/{owner}/{repo}/readme"
                             hf_or_gh = True
