@@ -178,6 +178,29 @@ textarea:focus-visible {
     font-size: 0.875rem;
 }
 
+/* Ensure form-select elements have sufficient color contrast - WCAG 2.1 AA compliant */
+/* Explicitly set background color to ensure contrast checker can determine it */
+.form-select,
+.form-select:focus,
+.form-select:hover {
+    background-color: #ffffff !important; /* White background for sufficient contrast */
+    color: #212529 !important; /* Dark text (#212529) on white background exceeds 4.5:1 contrast ratio */
+    border-color: #ced4da;
+}
+
+/* Ensure select options have sufficient contrast */
+.form-select option {
+    background-color: #ffffff;
+    color: #212529;
+}
+
+/* Ensure select elements maintain contrast when disabled */
+.form-select:disabled {
+    background-color: #e9ecef !important;
+    color: #6c757d !important; /* Still meets contrast requirements when disabled */
+    opacity: 1; /* Override Bootstrap's opacity to maintain contrast */
+}
+
 /* Pagination */
 .pagination {
     margin-top: 2rem;
