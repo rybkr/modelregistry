@@ -7,7 +7,7 @@ REGION="us-east-1"
 
 echo "Creating S3 bucket: $BUCKET_NAME"
 aws s3 mb s3://$BUCKET_NAME --region $REGION
-aws s3api put-object --bucket $BUCKET_NAME --key users/ --region $REGION
+aws s3api put-object --bucket $BUCKET_NAME --key packages/ --region $REGION
 
 echo ""
 echo "[+] S3 bucket created: $BUCKET_NAME"
