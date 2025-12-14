@@ -228,15 +228,32 @@ textarea:focus-visible {
 }
 
 /* Ensure status cards with colored backgrounds maintain their backgrounds and text contrast - WCAG 2.1 AA compliant */
-.card.bg-success,
-.card.bg-success .card-body,
+/* Use high specificity ID selectors to override general card white background - must come after .card and .card-body rules */
 #status-card,
-#status-card .card-body {
+#status-card.card,
+#status-card.bg-success,
+#status-card.card.bg-success,
+#status-card.text-white,
+#status-card.card.bg-success.text-white {
+    background-color: #198754 !important; /* Bootstrap success green - explicit for contrast calculation */
+}
+
+#status-card .card-body,
+#status-card.card .card-body,
+#status-card.bg-success .card-body,
+#status-card.card.bg-success .card-body {
+    background-color: #198754 !important; /* Bootstrap success green for card-body - explicit for contrast calculation */
+}
+
+.card.bg-success,
+.card.bg-success .card-body {
     background-color: #198754 !important; /* Bootstrap success green - explicit for contrast calculation */
 }
 
 .card.bg-danger,
-.card.bg-danger .card-body {
+.card.bg-danger .card-body,
+.card.bg-danger.card,
+.card.bg-danger.card .card-body {
     background-color: #dc3545 !important; /* Bootstrap danger red - explicit for contrast calculation */
 }
 
