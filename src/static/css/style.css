@@ -179,13 +179,48 @@ textarea:focus-visible {
 }
 
 /* Ensure form-select elements have sufficient color contrast - WCAG 2.1 AA compliant */
-/* Explicitly set background color to ensure contrast checker can determine it */
+/* Set background-color explicitly before background-image to ensure it's detectable */
+/* The background-color must be set as a separate property to be detectable by contrast checkers */
+.form-select {
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    appearance: none !important; /* Remove native select styling */
+}
+
 .form-select,
 .form-select:focus,
 .form-select:hover {
-    background-color: #ffffff !important; /* White background for sufficient contrast */
+    background-color: #ffffff !important; /* White background - MUST be set before background-image */
     color: #212529 !important; /* Dark text (#212529) on white background exceeds 4.5:1 contrast ratio */
     border-color: #ced4da;
+}
+
+/* Set background-image separately after background-color to ensure color is detectable */
+.form-select,
+.form-select:focus,
+.form-select:hover {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23343a40' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 0.75rem center !important;
+    background-size: 16px 12px !important;
+}
+
+/* Maximum specificity for the specific select elements to ensure styles apply */
+select.form-select#sort-field,
+select.form-select#sort-order,
+select.form-select#search-limit,
+#sort-field.form-select,
+#sort-order.form-select,
+#search-limit.form-select {
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    appearance: none !important;
+    background-color: #ffffff !important; /* Explicit white background - detectable by contrast checkers */
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23343a40' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 0.75rem center !important;
+    background-size: 16px 12px !important;
+    color: #212529 !important; /* Dark text on white - 7:1+ contrast ratio */
 }
 
 /* Ensure select options have sufficient contrast */
@@ -195,8 +230,12 @@ textarea:focus-visible {
 }
 
 /* Ensure select elements maintain contrast when disabled */
-.form-select:disabled {
+.form-select:disabled,
+#sort-field:disabled,
+#sort-order:disabled,
+#search-limit:disabled {
     background-color: #e9ecef !important;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%236c757d' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e") !important; /* Gray arrow for disabled state */
     color: #6c757d !important; /* Still meets contrast requirements when disabled */
     opacity: 1; /* Override Bootstrap's opacity to maintain contrast */
 }
