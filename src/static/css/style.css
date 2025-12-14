@@ -25,6 +25,34 @@ span.text-muted {
     color: #495057 !important; /* Darker gray (#495057) on light backgrounds exceeds 4.5:1 contrast ratio */
 }
 
+/* Ensure small text-muted elements have sufficient contrast and explicit background - WCAG 2.1 AA compliant */
+.small.text-muted,
+.text-muted.small,
+span.small.text-muted,
+span.text-muted.small {
+    color: #495057 !important; /* Darker gray (#495057) on light backgrounds exceeds 4.5:1 contrast ratio for small text */
+    background-color: transparent !important; /* Explicit transparent background to ensure contrast checker can determine background */
+}
+
+/* Ensure log entry text-muted elements have explicit backgrounds and sufficient contrast */
+.log-entry .text-muted,
+.log-entry .small.text-muted,
+.log-entry .text-muted.small,
+.log-entry span.text-muted,
+.log-entry span.small.text-muted {
+    color: #495057 !important; /* Darker gray for sufficient contrast */
+    background-color: transparent !important; /* Explicit transparent background */
+}
+
+/* Ensure log entry containers have explicit background colors for contrast calculation */
+.log-entry {
+    background-color: transparent !important; /* Explicit background for contrast calculation */
+}
+
+#logs-body {
+    background-color: #ffffff !important; /* Explicit white background for log container */
+}
+
 /* Ensure link colors meet contrast requirements */
 a:not(.btn) {
     color: #0d6efd; /* Bootstrap primary blue - 4.5:1 contrast on white */
@@ -173,6 +201,12 @@ textarea:focus-visible {
 /* Card hover effects */
 .card {
     transition: box-shadow 0.15s ease-in-out;
+    background-color: #ffffff !important; /* Explicit white background for contrast calculation */
+}
+
+/* Ensure card body has explicit background for contrast calculation */
+.card-body {
+    background-color: #ffffff !important; /* Explicit white background for contrast calculation */
 }
 
 .card:hover {
