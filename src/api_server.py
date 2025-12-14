@@ -186,42 +186,55 @@ def _decode_package_content(content: str) -> bytes:
         return content.encode('utf-8', errors='ignore')
 
 
-def _upload_package_content_to_s3(package_id: str, content: bytes, content_type: str = "application/octet-stream") -> Optional[str]:
-    """Upload package content to S3.
+def _upload_package_to_s3(package_id: str, content: bytes = None, metadata: dict = None) -> Optional[str]:
+    """Upload package to S3.
+    
+    Always creates an S3 entry for the package. If content is provided, uploads it.
+    Otherwise, creates a metadata file.
     
     Args:
         package_id: Unique package identifier (UUID)
-        content: Content bytes to upload
-        content_type: MIME type of content (default: application/octet-stream)
+        content: Content bytes to upload (optional)
+        metadata: Package metadata to store (optional)
         
     Returns:
         Optional[str]: S3 key if upload successful, None otherwise
     """
-    if not content or len(content) == 0:
-        return None
-    
     s3_client = _get_package_s3_client()
     if not s3_client or not _package_s3_bucket:
-        logger.debug("Package storage S3 bucket not configured, skipping upload")
+        logger.warning(f"Package storage S3 bucket not configured or client unavailable. Bucket: {_package_s3_bucket}, Client: {s3_client is not None}")
         return None
     
     # Generate S3 key
     s3_key = f"packages/{package_id}/content"
     
     try:
-        s3_client.put_object(
-            Bucket=_package_s3_bucket,
-            Key=s3_key,
-            Body=content,
-            ContentType=content_type
-        )
-        logger.info(f"Package content uploaded to S3: {s3_key} ({len(content)} bytes)")
+        if content and len(content) > 0:
+            # Upload actual content
+            s3_client.put_object(
+                Bucket=_package_s3_bucket,
+                Key=s3_key,
+                Body=content,
+                ContentType="application/octet-stream"
+            )
+            logger.info(f"Package content uploaded to S3: {s3_key} ({len(content)} bytes)")
+        else:
+            # Create placeholder/metadata file
+            metadata_content = json.dumps(metadata or {}, indent=2).encode('utf-8')
+            s3_client.put_object(
+                Bucket=_package_s3_bucket,
+                Key=s3_key,
+                Body=metadata_content,
+                ContentType="application/json"
+            )
+            logger.info(f"Package metadata uploaded to S3: {s3_key} (metadata only, {len(metadata_content)} bytes)")
+        
         return s3_key
     except ClientError as e:
-        logger.error(f"Failed to upload package content to S3: {e}")
+        logger.error(f"Failed to upload package to S3: {e}")
         return None
     except Exception as e:
-        logger.error(f"Unexpected error uploading package content to S3: {e}")
+        logger.error(f"Unexpected error uploading package to S3: {e}")
         return None
 
 
@@ -755,18 +768,22 @@ def create_package():
     # Generate package ID
     package_id = str(uuid.uuid4())
 
-    # Upload content to S3 if provided
+    # Always upload package to S3 (with content if provided, or metadata if not)
     s3_key = None
-    logger.info(f"Package creation: content length={len(content) if content else 0}")
-    if content:
-        try:
+    content_length = len(content) if content else 0
+    logger.info(f"Package creation: name={name}, version={version}, content_length={content_length}, has_content={bool(content)}")
+    
+    try:
+        content_bytes = None
+        if content:
             content_bytes = _decode_package_content(content)
-            if content_bytes:
-                s3_key = _upload_package_content_to_s3(package_id, content_bytes)
-                if not s3_key:
-                    logger.warning(f"Failed to upload content to S3 for package {package_id}, continuing without S3 storage")
-        except Exception as e:
-            logger.error(f"Error processing content for S3 upload: {e}, continuing without S3 storage")
+        
+        # Always upload to S3 (content if available, metadata otherwise)
+        s3_key = _upload_package_to_s3(package_id, content_bytes, metadata)
+        if not s3_key:
+            logger.warning(f"Failed to upload package to S3 for package {package_id}, continuing without S3 storage")
+    except Exception as e:
+        logger.error(f"Error uploading package to S3: {e}, continuing without S3 storage")
 
     # Calculate size_bytes from content
     size_bytes = len(content.encode("utf-8")) if content else 0
@@ -1150,6 +1167,13 @@ def create_artifact(artifact_type):
     # Create package
 
     package_id = str(uuid.uuid4())
+    
+    # Always upload package to S3 (metadata only for URL-based packages)
+    metadata = {"url": url, "scores": scores}
+    s3_key = _upload_package_to_s3(package_id, None, metadata)
+    if not s3_key:
+        logger.warning(f"Failed to upload package to S3 for package {package_id}, continuing without S3 storage")
+    
     package = Package(
         id=package_id,
         artifact_type=artifact_type,
@@ -1158,8 +1182,8 @@ def create_artifact(artifact_type):
         uploaded_by=DEFAULT_USERNAME,
         upload_timestamp=datetime.now(timezone.utc),
         size_bytes=0,
-        metadata={"url": url, "scores": scores},
-        s3_key=None,
+        metadata=metadata,
+        s3_key=s3_key,
     )
 
     storage.create_package(package)
@@ -2346,6 +2370,12 @@ def ingest_model():
         # Infer artifact type from URL
         artifact_type = infer_artifact_type_from_url(url)
 
+        # Always upload package to S3 (metadata only for URL-based packages)
+        metadata = {"url": url, "scores": scores}
+        s3_key = _upload_package_to_s3(package_id, None, metadata)
+        if not s3_key:
+            logger.warning(f"Failed to upload package to S3 for package {package_id}, continuing without S3 storage")
+
         package = Package(
             id=package_id,
             artifact_type=artifact_type,
@@ -2354,8 +2384,8 @@ def ingest_model():
             uploaded_by=DEFAULT_USERNAME,
             upload_timestamp=datetime.now(timezone.utc),
             size_bytes=0,
-            metadata={"url": url, "scores": scores},
-            s3_key=None,
+            metadata=metadata,
+            s3_key=s3_key,
         )
 
         storage.create_package(package)
@@ -2446,18 +2476,20 @@ def ingest_upload():
                 if "url" in metadata:
                     artifact_type = infer_artifact_type_from_url(metadata["url"])
 
-                # Upload content to S3 if provided
+                # Always upload package to S3 (with content if provided, or metadata if not)
                 content = pkg_data.get("content", "")
                 s3_key = None
-                if content:
-                    try:
+                try:
+                    content_bytes = None
+                    if content:
                         content_bytes = _decode_package_content(content)
-                        if content_bytes:
-                            s3_key = _upload_package_content_to_s3(package_id, content_bytes)
-                            if not s3_key:
-                                logger.warning(f"Failed to upload content to S3 for package {package_id}, continuing without S3 storage")
-                    except Exception as e:
-                        logger.error(f"Error processing content for S3 upload: {e}, continuing without S3 storage")
+                    
+                    # Always upload to S3 (content if available, metadata otherwise)
+                    s3_key = _upload_package_to_s3(package_id, content_bytes, metadata)
+                    if not s3_key:
+                        logger.warning(f"Failed to upload package to S3 for package {package_id}, continuing without S3 storage")
+                except Exception as e:
+                    logger.error(f"Error uploading package to S3: {e}, continuing without S3 storage")
 
                 # Calculate size_bytes from content
                 size_bytes = len(content.encode("utf-8")) if content else 0
