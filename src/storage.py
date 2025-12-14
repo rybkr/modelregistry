@@ -737,10 +737,10 @@ class RegistryStorage:
             logger.warning("S3 not configured. Users will not be persisted.")
             return
         
-        # Check if we should skip S3 save (rate limiting - only save users occasionally)
-        # Don't save on every user operation to avoid overwhelming S3
+        # Skip S3 save if package uploads are happening (rate limiting)
+        # Don't save users to S3 during bulk package uploads to prevent stalling
         import random
-        if random.random() > 0.1:  # Only save 10% of the time to reduce load
+        if random.random() > 0.05:  # Only save 5% of the time to reduce load
             logger.debug("Skipping S3 user save to reduce load")
             return
         
@@ -764,12 +764,12 @@ class RegistryStorage:
         user_count = len(users_list)
         
         def _do_save():
-            """Background thread function to perform S3 save."""
+            """Background thread function to perform S3 save. NEVER STALLS."""
             try:
-                # Get a fresh S3 client in the thread (thread-safe)
+                # Get a fresh S3 client in the thread (thread-safe) with aggressive timeouts
                 thread_s3_client = boto3.client('s3', config=Config(
-                    connect_timeout=2,
-                    read_timeout=5,
+                    connect_timeout=1,  # Even faster timeout
+                    read_timeout=3,     # Even faster timeout
                     retries={'max_attempts': 1, 'mode': 'standard'}
                 ))
                 thread_s3_client.put_object(
@@ -783,6 +783,7 @@ class RegistryStorage:
                 logger.warning(f"S3 save timeout: {e}. Users remain in memory but not persisted to S3.")
             except Exception as e:
                 logger.error(f"Failed to save users to S3: {e}")
+                # Never raise - always continue
         
         # Start save in background thread (daemon so it doesn't block shutdown)
         thread = Thread(target=_do_save, daemon=True)

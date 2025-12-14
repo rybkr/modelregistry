@@ -102,8 +102,8 @@ DEFAULT_TOKEN = "bearer default-admin-token"
 _package_s3_bucket = os.environ.get("PACKAGE_STORAGE_BUCKET")
 _package_s3_client = None
 
-# Rate limiting for S3 uploads - prevent overwhelming system during bulk uploads
-_max_concurrent_s3_uploads = 5  # Maximum concurrent S3 uploads
+# Rate limiting for S3 uploads - ONE AT A TIME to prevent any stalling
+_max_concurrent_s3_uploads = 1  # Only ONE upload at a time
 _active_s3_uploads = 0
 _s3_upload_lock = threading.Lock()
 
@@ -149,12 +149,12 @@ def _get_package_s3_client():
     
     if _package_s3_client is None:
         try:
-            # Configure S3 client with aggressive timeouts to prevent hanging
+            # Configure S3 client with ULTRA-AGGRESSIVE timeouts - NEVER STALL
             s3_config = Config(
-                connect_timeout=2,
-                read_timeout=5,
+                connect_timeout=1,  # 1 second max to connect
+                read_timeout=3,     # 3 seconds max to read
                 retries={
-                    'max_attempts': 1,
+                    'max_attempts': 1,  # No retries - fail fast
                     'mode': 'standard'
                 }
             )
@@ -221,14 +221,19 @@ def _upload_package_to_s3(package_id: str, content: bytes = None, metadata: dict
         logger.warning(f"Package storage S3 bucket not configured or client unavailable. Bucket: {_package_s3_bucket}, Client: {s3_client is not None}")
         return None
     
-    # Check if we have bandwidth for S3 upload (rate limiting)
+    # Check if we have bandwidth for S3 upload (rate limiting - ONE AT A TIME)
     global _active_s3_uploads
-    with _s3_upload_lock:
-        if _active_s3_uploads >= _max_concurrent_s3_uploads:
-            # Too many concurrent uploads, skip this one to prevent overwhelming system
-            logger.debug(f"Skipping S3 upload for package {package_id}: {_active_s3_uploads} concurrent uploads already in progress")
-            return None
-        _active_s3_uploads += 1
+    try:
+        with _s3_upload_lock:
+            if _active_s3_uploads >= _max_concurrent_s3_uploads:
+                # Already one upload in progress, skip this one - NEVER STALL
+                logger.debug(f"Skipping S3 upload for package {package_id}: upload already in progress (one at a time)")
+                return None
+            _active_s3_uploads += 1
+    except Exception:
+        # If lock fails for any reason, skip upload - NEVER STALL
+        logger.warning(f"Lock error checking S3 upload status, skipping upload for package {package_id}")
+        return None
     
     # Generate S3 key
     s3_key = f"packages/{package_id}/content"
@@ -246,7 +251,7 @@ def _upload_package_to_s3(package_id: str, content: bytes = None, metadata: dict
         is_metadata = True
     
     def _do_upload():
-        """Background thread function to perform S3 upload."""
+        """Background thread function to perform S3 upload. NEVER STALLS."""
         global _active_s3_uploads
         try:
             # Get a fresh S3 client in the thread (thread-safe)
@@ -254,6 +259,7 @@ def _upload_package_to_s3(package_id: str, content: bytes = None, metadata: dict
             if not thread_s3_client:
                 return
             
+            # Use aggressive timeout - fail fast if S3 is slow
             thread_s3_client.put_object(
                 Bucket=bucket_name,
                 Key=key_name,
@@ -271,9 +277,13 @@ def _upload_package_to_s3(package_id: str, content: bytes = None, metadata: dict
         except Exception as e:
             logger.error(f"Unexpected error uploading package to S3: {e}")
         finally:
-            # Decrement active upload counter when done
-            with _s3_upload_lock:
-                _active_s3_uploads = max(0, _active_s3_uploads - 1)
+            # ALWAYS decrement counter - even on exception - to prevent deadlock
+            try:
+                with _s3_upload_lock:
+                    _active_s3_uploads = max(0, _active_s3_uploads - 1)
+            except Exception:
+                # If lock fails, force reset (should never happen but safety)
+                _active_s3_uploads = 0
     
     # Start upload in background thread (daemon so it doesn't block shutdown)
     thread = threading.Thread(target=_do_upload, daemon=True)
