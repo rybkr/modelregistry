@@ -97,7 +97,7 @@ The Model Registry can be configured using the following environment variables:
 Create a `.env` file in the project root (optional, for local development):
 ```bash
 PORT=8000
-GH_API_TOKEN=your_github_token_here
+GITHUB_TOKEN=your_github_token_here
 PURDUE_GENAI_API_KEY=your_purdue_genai_key_here
 LOG_LEVEL=1
 LOG_FILE=model_registry.log
