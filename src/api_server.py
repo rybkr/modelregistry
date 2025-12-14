@@ -757,6 +757,7 @@ def create_package():
 
     # Upload content to S3 if provided
     s3_key = None
+    logger.info(f"Package creation: content length={len(content) if content else 0}")
     if content:
         try:
             content_bytes = _decode_package_content(content)
@@ -2797,4 +2798,4 @@ if __name__ == "__main__":
     initialize_default_admin_user()
     # Read port from environment variable (AWS EB sets this) or default to 8000
     port = int(os.environ.get("PORT", 8000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port, debug=False)
