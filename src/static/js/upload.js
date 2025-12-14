@@ -102,7 +102,17 @@ async function handleUpload(event) {
             window.location.href = `/packages/${response.package.id}`;
         }, 1500);
     } catch (error) {
-        showAlert(`Failed to upload package: ${error.message}`, 'danger');
+        // Check if it's an authentication error
+        if (error.message && (error.message.includes('403') || error.message.includes('Authentication') || error.message.includes('permission'))) {
+            showAlert('You must be logged in with upload permission to upload packages. Please log in and try again.', 'warning');
+            // Optionally open login modal
+            setTimeout(() => {
+                const loginModal = new bootstrap.Modal(document.getElementById('login-modal'));
+                loginModal.show();
+            }, 1500);
+        } else {
+            showAlert(`Failed to upload package: ${error.message}`, 'danger');
+        }
         submitBtn.disabled = false;
         submitBtn.innerHTML = originalText;
         submitBtn.removeAttribute('aria-busy');

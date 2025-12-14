@@ -625,6 +625,18 @@ def create_package():
     """
     logger.info("create_package called")
 
+    # Check authentication
+    is_valid, error_response, user_info = check_auth_header()
+    if not is_valid:
+        logger.warning("Upload failed: authentication check failed")
+        return error_response
+
+    # Check upload permission
+    has_permission, permission_error = check_permission(user_info, "upload")
+    if not has_permission:
+        logger.warning(f"Upload failed: permission denied for user={user_info.get('username')}")
+        return permission_error
+
     data = request.get_json()
     if not data:
         return jsonify({"error": "Request body must be JSON"}), 400
@@ -1852,6 +1864,13 @@ def authenticate():
             Error (501): Authentication not supported (not implemented)
     """
     logger.info("authenticate endpoint called")
+    
+    # Ensure default user exists before authentication attempts
+    try:
+        initialize_default_admin_user()
+    except Exception as e:
+        logger.error(f"Failed to ensure default user exists: {e}")
+    
     try:
         data = request.get_json()
         if not data:
@@ -1982,6 +2001,10 @@ def reset_registry():
         if DEFAULT_TOKEN not in _valid_tokens:
             initialize_default_token()
         logger.info(f"After reset, valid_tokens count: {len(_valid_tokens)}")
+
+        # Ensure default user exists after reset
+        initialize_default_admin_user()
+        logger.info("Default admin user reinitialized after reset")
 
         storage.record_event(
             "registry_reset",
