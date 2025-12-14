@@ -9,6 +9,7 @@ function updateResetButtonVisibility() {
     const resetBtn = document.getElementById('reset-registry');
     if (!resetBtn) return;
 
+    // Only show reset button if user is authenticated and has admin permission
     if (typeof authManager !== 'undefined' && authManager.isAuthenticated() && authManager.hasPermission('admin')) {
         resetBtn.style.display = '';
         resetBtn.disabled = false;

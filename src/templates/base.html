@@ -139,21 +139,16 @@
                             <label for="login-username" class="form-label">Username <span class="text-danger"
                                     aria-label="required">*</span></label>
                             <input type="text" class="form-control" id="login-username" required aria-required="true"
-                                aria-describedby="login-username-help">
+                                aria-describedby="login-username-help" autocomplete="username">
                             <div id="login-username-help" class="form-text">Enter your username</div>
                         </div>
                         <div class="mb-3">
                             <label for="login-password" class="form-label">Password <span class="text-danger"
                                     aria-label="required">*</span></label>
                             <input type="password" class="form-control" id="login-password" required
-                                aria-required="true" aria-describedby="login-password-help">
+                                aria-required="true" aria-describedby="login-password-help"
+                                autocomplete="current-password">
                             <div id="login-password-help" class="form-text">Enter your password</div>
-                        </div>
-                        <div class="mb-3">
-                            <button type="button" class="btn btn-link btn-sm p-0" id="use-default-credentials"
-                                style="font-size: 0.875rem;">
-                                Use default test credentials
-                            </button>
                         </div>
                         <div id="login-error" class="alert alert-danger" role="alert" style="display: none;"></div>
                     </form>

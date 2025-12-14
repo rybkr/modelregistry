@@ -163,15 +163,6 @@ function initLoginModal() {
             loginForm.reset();
         }
     });
-
-    // Add default credentials helper
-    const useDefaultBtn = document.getElementById('use-default-credentials');
-    if (useDefaultBtn) {
-        useDefaultBtn.addEventListener('click', () => {
-            document.getElementById('login-username').value = 'ece30861defaultadminuser';
-            document.getElementById('login-password').value = 'correcthorsebatterystaple123(!__+@**(A\'"`;DROP TABLE packages;';
-        });
-    }
 }
 
 /**
