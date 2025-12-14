@@ -3,6 +3,7 @@
  */
 
 let currentPackageId = null;
+let currentArtifactType = 'model'; // Default to 'model' for backward compatibility
 
 /**
  * Initialize the page
@@ -47,6 +48,9 @@ async function loadPackageDetails() {
         loadingIndicator.style.display = 'none';
         packageDetails.style.display = 'block';
 
+        // Store artifact type for deletion
+        currentArtifactType = pkg.artifact_type || 'model';
+
         // Populate package information
         document.getElementById('package-name').textContent = pkg.name;
         document.getElementById('package-id').textContent = pkg.id;
@@ -87,7 +91,7 @@ async function loadPackageDetails() {
 async function handleRate() {
     const rateBtn = document.getElementById('rate-btn');
     const originalText = rateBtn.innerHTML;
-    
+
     rateBtn.disabled = true;
     rateBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Rating...';
     rateBtn.setAttribute('aria-busy', 'true');
@@ -125,11 +129,11 @@ function displayMetrics(metrics) {
     const metricsHtml = `
         <div class="row">
             ${sortedMetrics.map(([name, data]) => {
-                const score = data.score !== undefined ? data.score : data;
-                const latency = data.latency_ms !== undefined ? data.latency_ms : null;
-                const scoreInfo = formatScore(score);
-                
-                return `
+        const score = data.score !== undefined ? data.score : data;
+        const latency = data.latency_ms !== undefined ? data.latency_ms : null;
+        const scoreInfo = formatScore(score);
+
+        return `
                     <div class="col-md-6 mb-3">
                         <div class="card h-100">
                             <div class="card-body">
@@ -142,7 +146,7 @@ function displayMetrics(metrics) {
                         </div>
                     </div>
                 `;
-            }).join('')}
+    }).join('')}
         </div>
     `;
 
@@ -157,20 +161,20 @@ async function handleDelete() {
         'Are you sure you want to delete this package? This action cannot be undone.',
         'Delete Package'
     );
-    
+
     if (!confirmed) {
         return;
     }
 
     const deleteBtn = document.getElementById('delete-btn');
     const originalText = deleteBtn.innerHTML;
-    
+
     deleteBtn.disabled = true;
     deleteBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Deleting...';
     deleteBtn.setAttribute('aria-busy', 'true');
 
     try {
-        await apiClient.deletePackage(currentPackageId);
+        await apiClient.deletePackage(currentPackageId, currentArtifactType);
         showAlert('Package deleted successfully!', 'success');
         setTimeout(() => {
             window.location.href = '/';

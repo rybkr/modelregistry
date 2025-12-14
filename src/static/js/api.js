@@ -127,10 +127,11 @@ class ApiClient {
     /**
      * Delete a package
      * @param {string} packageId - Package ID
+     * @param {string} artifactType - Artifact type (model, dataset, or code)
      * @returns {Promise<object>}
      */
-    async deletePackage(packageId) {
-        return this.request(`/api/packages/${packageId}`, {
+    async deletePackage(packageId, artifactType = 'model') {
+        return this.request(`/api/artifacts/${artifactType}/${packageId}`, {
             method: 'DELETE',
         });
     }
