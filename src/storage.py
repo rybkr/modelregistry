@@ -29,7 +29,8 @@ from urllib.parse import urlparse
 
 import requests
 import boto3
-from botocore.exceptions import ClientError, NoCredentialsError
+from botocore.exceptions import ClientError, NoCredentialsError, ReadTimeoutError, ConnectTimeoutError
+from botocore.config import Config
 
 logger = logging.getLogger('storage')
 
@@ -153,7 +154,16 @@ class RegistryStorage:
         self._s3_bucket = os.environ.get("USER_STORAGE_BUCKET")
         self._s3_key = "users/users.json"
         try:
-            self._s3_client = boto3.client('s3')
+            # Configure S3 client with timeouts to prevent hanging
+            s3_config = Config(
+                connect_timeout=5,
+                read_timeout=10,
+                retries={
+                    'max_attempts': 2,
+                    'mode': 'standard'
+                }
+            )
+            self._s3_client = boto3.client('s3', config=s3_config)
         except (NoCredentialsError, Exception) as e:
             logger.warning(f"Failed to initialize S3 client: {e}. S3 operations will be disabled.")
             self._s3_client = None
@@ -689,6 +699,9 @@ class RegistryStorage:
             
             logger.info(f"Successfully loaded {len(users_dict)} users from S3")
             return users_dict
+        except (ReadTimeoutError, ConnectTimeoutError) as e:
+            logger.warning(f"S3 load timeout: {e}. Starting with empty users, will create default admin from environment variable.")
+            return {}
         except ClientError as e:
             if e.response['Error']['Code'] == 'NoSuchKey':
                 logger.info("S3 users file does not exist. Will create default admin from environment variable.")
@@ -732,6 +745,9 @@ class RegistryStorage:
                 ContentType='application/json'
             )
             logger.info(f"Successfully saved {len(users_list)} users to S3")
+        except (ReadTimeoutError, ConnectTimeoutError) as e:
+            logger.warning(f"S3 save timeout: {e}. Users remain in memory but not persisted to S3.")
+            # Don't raise exception - users are still in memory
         except Exception as e:
             logger.error(f"Failed to save users to S3: {e}")
             # Don't raise exception - users are still in memory

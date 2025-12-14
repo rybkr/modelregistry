@@ -17,7 +17,8 @@ import re
 import time
 import base64
 import boto3
-from botocore.exceptions import ClientError, NoCredentialsError
+from botocore.exceptions import ClientError, NoCredentialsError, ReadTimeoutError, ConnectTimeoutError
+from botocore.config import Config
 
 from registry_models import Package
 from storage import storage
@@ -142,7 +143,16 @@ def _get_package_s3_client():
     
     if _package_s3_client is None:
         try:
-            _package_s3_client = boto3.client('s3')
+            # Configure S3 client with timeouts to prevent hanging
+            s3_config = Config(
+                connect_timeout=5,
+                read_timeout=10,
+                retries={
+                    'max_attempts': 2,
+                    'mode': 'standard'
+                }
+            )
+            _package_s3_client = boto3.client('s3', config=s3_config)
             logger.info(f"S3 client initialized for package storage bucket: {_package_s3_bucket}")
         except (NoCredentialsError, Exception) as e:
             logger.warning(f"Failed to initialize S3 client for package storage: {e}")
@@ -230,6 +240,9 @@ def _upload_package_to_s3(package_id: str, content: bytes = None, metadata: dict
             logger.info(f"Package metadata uploaded to S3: {s3_key} (metadata only, {len(metadata_content)} bytes)")
         
         return s3_key
+    except (ReadTimeoutError, ConnectTimeoutError) as e:
+        logger.warning(f"S3 upload timeout for package {package_id}: {e}. Continuing without S3 storage.")
+        return None
     except ClientError as e:
         logger.error(f"Failed to upload package to S3: {e}")
         return None
