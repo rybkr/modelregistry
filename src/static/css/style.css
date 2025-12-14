@@ -258,23 +258,66 @@ textarea:focus-visible {
 }
 
 /* Ensure text in colored status cards is white for sufficient contrast - WCAG 2.1 AA compliant */
+/* Use maximum specificity selectors to override general heading rules */
 .card.text-white h3,
 .card.text-white .card-title,
 .card.text-white h3.card-title,
 #status-card h3,
 #status-card .card-title,
 #status-card h3.card-title,
-#status-card .card-title.h5 {
+#status-card .card-title.h5,
+#status-card.card h3,
+#status-card.card .card-title,
+#status-card.card h3.card-title,
+#status-card.card .card-title.h5,
+#status-card.bg-success h3,
+#status-card.bg-success .card-title,
+#status-card.bg-success h3.card-title,
+#status-card.bg-success .card-title.h5,
+#status-card.card.bg-success h3,
+#status-card.card.bg-success .card-title,
+#status-card.card.bg-success h3.card-title,
+#status-card.card.bg-success .card-title.h5,
+#status-card .card-body h3,
+#status-card .card-body .card-title,
+#status-card .card-body h3.card-title,
+#status-card .card-body .card-title.h5,
+#status-card.card .card-body h3,
+#status-card.card .card-body .card-title,
+#status-card.card .card-body h3.card-title,
+#status-card.card .card-body .card-title.h5 {
     color: #ffffff !important; /* White text on green background (#198754) = 4.5:1+ contrast ratio */
 }
 
+/* Ensure text in colored status cards is white for sufficient contrast - WCAG 2.1 AA compliant */
+/* Use maximum specificity selectors to override general text rules */
 .card.text-white p,
 .card.text-white .card-text,
 .card.text-white #health-status,
 #status-card p,
 #status-card .card-text,
 #status-card #health-status,
-#status-card .card-text.h4 {
+#status-card .card-text.h4,
+#status-card.card p,
+#status-card.card .card-text,
+#status-card.card #health-status,
+#status-card.card .card-text.h4,
+#status-card.bg-success p,
+#status-card.bg-success .card-text,
+#status-card.bg-success #health-status,
+#status-card.bg-success .card-text.h4,
+#status-card.card.bg-success p,
+#status-card.card.bg-success .card-text,
+#status-card.card.bg-success #health-status,
+#status-card.card.bg-success .card-text.h4,
+#status-card .card-body p,
+#status-card .card-body .card-text,
+#status-card .card-body #health-status,
+#status-card .card-body .card-text.h4,
+#status-card.card .card-body p,
+#status-card.card .card-body .card-text,
+#status-card.card .card-body #health-status,
+#status-card.card .card-body .card-text.h4 {
     color: #ffffff !important; /* White text on green background (#198754) = 4.5:1+ contrast ratio */
 }
 
@@ -489,10 +532,41 @@ body {
     color: #212529; /* Dark text on light background - exceeds 4.5:1 contrast */
 }
 
+/* Override text color for status card health status - must come after general body rules */
+#health-status,
+#status-card #health-status,
+#status-card .card-body #health-status,
+#status-card.card #health-status,
+#status-card.card .card-body #health-status,
+#status-card.bg-success #health-status,
+#status-card.bg-success .card-body #health-status,
+#status-card.card.bg-success #health-status,
+#status-card.card.bg-success .card-body #health-status,
+#status-card p#health-status,
+#status-card .card-text#health-status,
+#status-card .card-text.h4#health-status,
+#status-card .card-body p#health-status,
+#status-card .card-body .card-text#health-status,
+#status-card .card-body .card-text.h4#health-status {
+    color: #ffffff !important; /* White text on green background - override general body/text color */
+}
+
 /* Ensure headings are readable */
 h1, h2, h3, h4, h5, h6 {
     color: #212529;
     font-weight: 600;
+}
+
+/* Override heading color for status card - must come after general heading rules */
+#status-card h3,
+#status-card .card-title,
+#status-card h3.card-title,
+#status-card .card-title.h5,
+#status-card .card-body h3,
+#status-card .card-body .card-title,
+#status-card .card-body h3.card-title,
+#status-card .card-body .card-title.h5 {
+    color: #ffffff !important; /* White text on green background - override general heading color */
 }
 
 /* Ensure code blocks are readable */
