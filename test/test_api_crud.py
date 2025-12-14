@@ -43,25 +43,22 @@ def test_root_endpoint(client):
 
 
 def test_upload_package(client):
-    """Test successful package upload via POST /api/packages.
+    """Test successful package upload via POST /api/artifact.
 
     Args:
         client: Flask test client fixture
     """
     package_data = {
-        "name": "test-model",
-        "version": "1.0.0",
-        "content": "base64encodedcontent",
-        "metadata": {"description": "Test model"},
+        "url": "https://huggingface.co/google-bert/bert-base-uncased",
+        "name" : "bert-base-uncased"
     }
 
-    response = client.post("/api/packages", json=package_data)
+    response = client.post("/api/artifact/model", json=package_data)
     assert response.status_code == 201
 
     data = response.get_json()
-    assert "package" in data
-    assert data["package"]["name"] == "test-model"
-    assert data["package"]["version"] == "1.0.0"
+    assert "metadata" in data
+    assert data["metadata"]["name"] == "bert-base-uncased"
 
 
 def test_list_packages(client):
@@ -82,16 +79,27 @@ def test_list_packages(client):
 
 
 def test_get_package(client):
-    package_data = {"name": "test-model", "version": "1.0.0"}
-    upload_response = client.post("/api/packages", json=package_data)
-    package_id = upload_response.get_json()["package"]["id"]
+    package_data = {
+        "url": "https://huggingface.co/google-bert/bert-base-uncased",
+        "name" : "bert-base-uncased"
+    }
 
-    response = client.get(f"/api/packages/{package_id}")
+    upload_response = client.post("/api/artifact/model", json=package_data)
+    package_id = upload_response.get_json()["metadata"]["id"]
+
+    response = client.get("/api/artifact/byName/bert-base-uncased")
+    assert response.status_code == 200
+
+    data = response.get_json()[0]
+    assert data["id"] == package_id
+    assert data["name"] == "bert-base-uncased"
+
+    response = client.get(f"/api/artifacts/model/{package_id}")
     assert response.status_code == 200
 
     data = response.get_json()
-    assert data["id"] == package_id
-    assert data["name"] == "test-model"
+    assert data["metadata"]["id"] == package_id
+    assert data["metadata"]["name"] == "bert-base-uncased"
 
 
 def test_delete_package(client):
