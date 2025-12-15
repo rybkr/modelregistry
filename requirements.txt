@@ -43,7 +43,7 @@ PyYAML==6.0.3
 regex==2025.11.3
 requests==2.32.5
 ruff==0.14.6
-s3transfer==0.15.0
+s3transfer==0.16.0
 selenium==4.38.0
 shellingham==1.5.4
 six==1.17.0
